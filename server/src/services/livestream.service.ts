@@ -10,7 +10,7 @@ import type {
   LivestreamResponse,
   Livestream
 } from '../types/livestream.types.js';
-import { ValidationError, ConflictError } from '../utils/errors.js';
+import { ValidationError, ConflictError, AuthorizationError } from '../utils/errors.js';
 
 class LivestreamService {
   /**
@@ -92,6 +92,51 @@ class LivestreamService {
   }): Promise<LivestreamResponse[]> {
     const livestreams = await databaseService.listLivestreams(filters);
     return livestreams.map(ls => this.formatLivestreamResponse(ls));
+  }
+
+  /**
+   * Delete a livestream (soft delete)
+   * 1. Verify the livestream exists
+   * 2. Check authorization (only creator can delete)
+   * 3. Delete the LiveKit room (disconnects all participants)
+   * 4. Update database status to ENDED
+   *
+   * @param id Livestream ID
+   * @param requestingUserId User ID making the delete request
+   */
+  async deleteLivestream(id: string, requestingUserId: string): Promise<LivestreamResponse> {
+    // Get the livestream
+    const livestream = await databaseService.getLivestreamById(id);
+
+    // Check if already ended
+    if (livestream.status === 'ENDED') {
+      // Idempotent operation - return success if already ended
+      return this.formatLivestreamResponse(livestream);
+    }
+
+    // Authorization check: only creator can delete
+    if (livestream.createdBy !== requestingUserId) {
+      throw new AuthorizationError(
+        'Only the creator of the livestream can delete it'
+      );
+    }
+
+    // Delete the LiveKit room (this will disconnect all participants)
+    try {
+      await livekitService.deleteRoom(livestream.roomName);
+    } catch (error) {
+      // Log error but continue with database update
+      // The room might already be deleted or not exist in LiveKit
+      console.warn(`Failed to delete LiveKit room ${livestream.roomName}:`, error);
+    }
+
+    // Update database with ENDED status and endedAt timestamp
+    const updatedLivestream = await databaseService.updateLivestream(id, {
+      status: 'ENDED',
+      endedAt: new Date(),
+    });
+
+    return this.formatLivestreamResponse(updatedLivestream);
   }
 
   /**

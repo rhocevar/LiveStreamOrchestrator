@@ -195,10 +195,46 @@ Response: 200 OK
 }
 ```
 
+#### Delete Livestream
+```http
+DELETE /api/v1/livestreams/:id
+Content-Type: application/json
+
+{
+  "requestingUserId": "user-id-123"
+}
+
+Response: 200 OK
+{
+  "success": true,
+  "message": "Livestream deleted successfully",
+  "data": {
+    "id": "uuid",
+    "roomName": "my-livestream",
+    "status": "ENDED",
+    "endedAt": "2025-11-01T...",
+    ...
+  }
+}
+
+Error Responses:
+- 400: requestingUserId not provided
+- 403: User is not the creator (authorization failed)
+- 404: Livestream not found
+```
+
+**Delete Behavior:**
+- **Soft Delete**: Sets status to `ENDED`, preserves record for history
+- **Authorization**: Only the creator (`createdBy`) can delete their livestream
+- **LiveKit Room**: Immediately deletes the room, disconnecting all active participants
+- **Idempotent**: Deleting an already ended livestream returns success
+
+**Note**: In production, `requestingUserId` would come from authentication middleware (JWT, session, etc.) rather than request body.
+
 ### Livestream Status Flow
 - **SCHEDULED**: Created in database, waiting for LiveKit room creation
 - **LIVE**: LiveKit room successfully created and active
-- **ENDED**: Livestream has concluded (future feature)
+- **ENDED**: Livestream has concluded or been deleted
 - **ERROR**: LiveKit room creation failed
 
 ## Environment Setup
@@ -354,11 +390,11 @@ HTTP Request
 ### Planned Features
 - Access token generation for clients to join rooms
 - Webhook handler for LiveKit events (room started, participant joined, etc.)
-- Room deletion endpoint
 - Room update endpoint (change settings)
 - Participant management
 - Recording and streaming capabilities
 - Analytics and usage tracking
+- Full authentication system (replace requestingUserId with JWT/session)
 
 ### Infrastructure
 - Add testing (Jest, Vitest, React Testing Library)

@@ -44,3 +44,9 @@ export class DatabaseError extends AppError {
     super(message, 500);
   }
 }
+
+export class AuthorizationError extends AppError {
+  constructor(message: string = 'Not authorized to perform this action') {
+    super(message, 403);
+  }
+}
