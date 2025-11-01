@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import express from 'express';
 import { livekitService } from '../services/livekit.service.js';
 import { livestreamService } from '../services/livestream.service.js';
 
@@ -21,45 +22,62 @@ const router = Router();
  * - participant_left: Participant disconnected from room
  * - room_started: Room became active
  * - room_finished: Room was closed
+ *
+ * IMPORTANT: We use express.raw() middleware to capture the raw body for signature verification
  */
-router.post('/livekit', async (req: Request, res: Response) => {
-  try {
-    // Get the raw body as string for signature verification
-    const rawBody = JSON.stringify(req.body);
-    const authHeader = req.headers.authorization || '';
+router.post(
+  '/livekit',
+  express.raw({ type: 'application/json' }),
+  async (req: Request, res: Response) => {
+    try {
+      // Ensure we have a Buffer body
+      if (!Buffer.isBuffer(req.body)) {
+        console.error('Webhook body is not a Buffer:', typeof req.body);
+        res.status(400).json({
+          success: false,
+          error: 'BadRequest',
+          message: 'Invalid webhook body format',
+        });
+        return;
+      }
 
-    // Verify webhook signature
-    const event = livekitService.verifyWebhook(rawBody, authHeader);
+      // Get the raw body (Buffer) and convert to string for signature verification
+      const rawBody = req.body.toString('utf-8');
+      const authHeader = req.headers.authorization || '';
 
-    if (!event) {
-      // Invalid signature
-      console.warn('Received webhook with invalid signature');
-      res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Invalid webhook signature',
+      // Verify webhook signature
+      const event = livekitService.verifyWebhook(rawBody, authHeader);
+
+      if (!event) {
+        // Invalid signature
+        console.warn('Received webhook with invalid signature');
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized',
+          message: 'Invalid webhook signature',
+        });
+        return;
+      }
+
+      // Process the webhook event
+      await livestreamService.handleWebhookEvent(event);
+
+      // Respond immediately to LiveKit (they expect a 200 response)
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed',
       });
-      return;
+    } catch (error) {
+      console.error('Error processing webhook:', error);
+
+      // Still return 200 to prevent LiveKit from retrying
+      // We've already logged the error for investigation
+      res.status(200).json({
+        success: true,
+        message: 'Webhook received',
+      });
     }
-
-    // Process the webhook event
-    await livestreamService.handleWebhookEvent(event);
-
-    // Respond immediately to LiveKit (they expect a 200 response)
-    res.status(200).json({
-      success: true,
-      message: 'Webhook processed',
-    });
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-
-    // Still return 200 to prevent LiveKit from retrying
-    // We've already logged the error for investigation
-    res.status(200).json({
-      success: true,
-      message: 'Webhook received',
-    });
   }
-});
+);
 
 export default router;

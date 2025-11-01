@@ -24,7 +24,14 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 
 // Body parsing middleware
-app.use(express.json());
+// Skip JSON parsing for webhook routes (they need raw body for signature verification)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/v1/webhooks')) {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware (development only)
