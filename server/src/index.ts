@@ -7,6 +7,7 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import livestreamRoutes from './routes/livestream.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
 import { databaseService } from './services/database.service.js';
 import { AppError } from './utils/errors.js';
 import type { ErrorResponse } from './types/livestream.types.js';
@@ -49,6 +50,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // API v1 routes
 app.use('/api/v1/livestreams', livestreamRoutes);
+app.use('/api/v1/webhooks', webhookRoutes);
 
 // 404 handler for undefined routes
 app.use((req: Request, res: Response) => {

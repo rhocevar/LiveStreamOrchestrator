@@ -29,7 +29,31 @@ model Livestream {
   startedAt        DateTime?
   endedAt          DateTime?
 
+  // Relations
+  participants     Participant[]
+
   @@map("livestreams")
+}
+
+// Participant model for tracking users in livestreams
+model Participant {
+  id            String            @id @default(uuid())
+  livestreamId  String
+  livestream    Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
+  userId        String
+  displayName   String
+  role          ParticipantRole   @default(VIEWER)
+  status        ParticipantStatus @default(JOINED)
+  metadata      Json?
+
+  // Timestamps
+  joinedAt      DateTime          @default(now())
+  leftAt        DateTime?
+
+  // Composite index for efficient queries
+  @@index([livestreamId, status])
+  @@index([userId])
+  @@map("participants")
 }
 
 // Enum for livestream status
@@ -38,4 +62,16 @@ enum LivestreamStatus {
   LIVE
   ENDED
   ERROR
+}
+
+// Enum for participant role (host can publish, viewer can only subscribe)
+enum ParticipantRole {
+  HOST
+  VIEWER
+}
+
+// Enum for participant status
+enum ParticipantStatus {
+  JOINED
+  LEFT
 }

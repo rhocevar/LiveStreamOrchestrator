@@ -2,10 +2,22 @@
  * Type definitions for Livestream API
  */
 
-import type { Livestream, LivestreamStatus } from '@prisma/client';
+import type {
+  Livestream,
+  LivestreamStatus,
+  Participant,
+  ParticipantRole,
+  ParticipantStatus
+} from '@prisma/client';
 
 // Re-export Prisma types
-export type { Livestream, LivestreamStatus };
+export type {
+  Livestream,
+  LivestreamStatus,
+  Participant,
+  ParticipantRole,
+  ParticipantStatus
+};
 
 /**
  * Request body for creating a new livestream
@@ -55,4 +67,62 @@ export interface ErrorResponse {
   error: string;
   message: string;
   statusCode: number;
+}
+
+/**
+ * Request body for joining a livestream
+ */
+export interface JoinLivestreamRequest {
+  userId: string;
+  displayName: string;
+  role: ParticipantRole;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Response format for join livestream endpoint
+ */
+export interface JoinLivestreamResponse {
+  token: string;
+  url: string;
+  participant: ParticipantResponse;
+}
+
+/**
+ * Request body for leaving a livestream
+ */
+export interface LeaveLivestreamRequest {
+  userId: string;
+}
+
+/**
+ * Response format for participant endpoints
+ */
+export interface ParticipantResponse {
+  id: string;
+  livestreamId: string;
+  userId: string;
+  displayName: string;
+  role: ParticipantRole;
+  status: ParticipantStatus;
+  metadata: Record<string, unknown> | null;
+  joinedAt: Date;
+  leftAt: Date | null;
+}
+
+/**
+ * LiveKit webhook event types
+ */
+export interface WebhookEvent {
+  event: string;
+  room?: {
+    sid: string;
+    name: string;
+  };
+  participant?: {
+    sid: string;
+    identity: string;
+    name: string;
+  };
+  createdAt: number;
 }

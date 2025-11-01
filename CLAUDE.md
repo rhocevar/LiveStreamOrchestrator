@@ -32,7 +32,8 @@ favorited/                    # Monorepo root
 │   │   │   ├── database.service.ts    # Prisma database operations
 │   │   │   └── livestream.service.ts  # Orchestration layer
 │   │   ├── routes/           # API routes
-│   │   │   └── livestream.routes.ts   # Livestream endpoints
+│   │   │   ├── livestream.routes.ts   # Livestream endpoints
+│   │   │   └── webhook.routes.ts      # LiveKit webhook handler
 │   │   ├── types/            # TypeScript type definitions
 │   │   │   └── livestream.types.ts
 │   │   ├── utils/            # Utility functions
@@ -231,6 +232,151 @@ Error Responses:
 
 **Note**: In production, `requestingUserId` would come from authentication middleware (JWT, session, etc.) rather than request body.
 
+#### Join Livestream
+```http
+POST /api/v1/livestreams/:id/join
+Content-Type: application/json
+
+{
+  "userId": "user-id-123",
+  "displayName": "John Doe",
+  "role": "VIEWER",  // or "HOST" (only creator can be HOST)
+  "metadata": { "key": "value" }  // optional
+}
+
+Response: 200 OK
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "url": "wss://your-project.livekit.cloud",
+    "participant": {
+      "id": "uuid",
+      "livestreamId": "livestream-uuid",
+      "userId": "user-id-123",
+      "displayName": "John Doe",
+      "role": "VIEWER",
+      "status": "JOINED",
+      "joinedAt": "2025-11-01T...",
+      "leftAt": null,
+      "metadata": { "key": "value" }
+    }
+  }
+}
+
+Error Responses:
+- 400: Invalid request (missing fields, invalid role, livestream not LIVE)
+- 403: User not authorized to join as HOST (only creator can be HOST)
+- 404: Livestream not found
+- 409: User already an active participant
+```
+
+**Join Behavior:**
+- **Authentication**: Only authenticated users can join (userId required)
+- **Authorization**: Only the livestream creator can join as HOST role
+- **Access Token**: Returns a LiveKit JWT token valid for 24 hours (configurable via `TOKEN_EXPIRATION_HOURS`)
+- **Participant Record**: Creates a database record to track participation
+- **Permissions**:
+  - **HOST**: Can publish audio/video and subscribe to others
+  - **VIEWER**: Can only subscribe (watch/listen), cannot publish
+
+**Note**: In production, `userId` would come from authentication middleware.
+
+#### Leave Livestream
+```http
+POST /api/v1/livestreams/:id/leave
+Content-Type: application/json
+
+{
+  "userId": "user-id-123"
+}
+
+Response: 200 OK
+{
+  "success": true,
+  "message": "Left livestream successfully"
+}
+
+Error Responses:
+- 400: userId not provided
+- 404: Livestream not found
+```
+
+**Leave Behavior:**
+- **Status Update**: Marks participant status as `LEFT` with timestamp
+- **Idempotent**: Calling leave multiple times is safe
+- **Automatic**: LiveKit webhooks also trigger leave when participants disconnect
+
+**Note**: Clients can also disconnect without calling this endpoint. The webhook handler will automatically update participant status when LiveKit sends `participant_left` events.
+
+#### Get Participants
+```http
+GET /api/v1/livestreams/:id/participants?status=JOINED&role=VIEWER&limit=50&offset=0
+
+Response: 200 OK
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "livestreamId": "livestream-uuid",
+      "userId": "user-id-123",
+      "displayName": "John Doe",
+      "role": "VIEWER",
+      "status": "JOINED",
+      "joinedAt": "2025-11-01T...",
+      "leftAt": null,
+      "metadata": { ... }
+    },
+    ...
+  ],
+  "count": 5
+}
+
+Query Parameters:
+- status: Filter by JOINED or LEFT
+- role: Filter by HOST or VIEWER
+- limit: Number of results to return
+- offset: Number of results to skip
+```
+
+#### LiveKit Webhook
+```http
+POST /api/v1/webhooks/livekit
+Authorization: <LiveKit webhook signature>
+Content-Type: application/json
+
+{
+  "event": "participant_joined",
+  "room": {
+    "sid": "RM_...",
+    "name": "my-livestream"
+  },
+  "participant": {
+    "sid": "PA_...",
+    "identity": "user-id-123",
+    "name": "John Doe"
+  },
+  "createdAt": 1234567890
+}
+
+Response: 200 OK
+{
+  "success": true,
+  "message": "Webhook processed"
+}
+```
+
+**Webhook Behavior:**
+- **Signature Verification**: Validates webhook came from LiveKit
+- **Events Handled**:
+  - `participant_joined`: Logs participant connection (record already created during join)
+  - `participant_left`: Automatically marks participant as LEFT in database
+  - `room_started`: Logs room activation
+  - `room_finished`: Marks all active participants as LEFT
+- **Automatic**: No manual setup required - just configure URL in LiveKit dashboard
+- **Configuration**: Set webhook URL in LiveKit dashboard to: `https://yourapp.com/api/v1/webhooks/livekit`
+
 ### Livestream Status Flow
 - **SCHEDULED**: Created in database, waiting for LiveKit room creation
 - **LIVE**: LiveKit room successfully created and active
@@ -255,6 +401,9 @@ DATABASE_URL="postgresql://user:password@localhost:5432/favorited?schema=public"
 LIVEKIT_URL=https://your-project.livekit.cloud
 LIVEKIT_API_KEY=your-api-key
 LIVEKIT_API_SECRET=your-api-secret
+
+# Access token expiration in hours (default: 24)
+TOKEN_EXPIRATION_HOURS=24
 ```
 
 ### Database Setup
@@ -311,6 +460,7 @@ model Livestream {
   updatedAt        DateTime          @updatedAt
   startedAt        DateTime?
   endedAt          DateTime?
+  participants     Participant[]     // Relation to participants
 }
 
 enum LivestreamStatus {
@@ -318,6 +468,35 @@ enum LivestreamStatus {
   LIVE
   ENDED
   ERROR
+}
+```
+
+### Participant Model
+```prisma
+model Participant {
+  id            String            @id @default(uuid())
+  livestreamId  String
+  livestream    Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
+  userId        String
+  displayName   String
+  role          ParticipantRole   @default(VIEWER)
+  status        ParticipantStatus @default(JOINED)
+  metadata      Json?
+  joinedAt      DateTime          @default(now())
+  leftAt        DateTime?
+
+  @@index([livestreamId, status])
+  @@index([userId])
+}
+
+enum ParticipantRole {
+  HOST    // Can publish audio/video and subscribe
+  VIEWER  // Can only subscribe (watch/listen)
+}
+
+enum ParticipantStatus {
+  JOINED  // Currently in the livestream
+  LEFT    // Has left the livestream
 }
 ```
 
@@ -385,16 +564,25 @@ HTTP Request
 - Commit messages should be clear and descriptive
 - Keep commits atomic and focused
 
+## Implemented Features
+
+### Participant Management (✅ Completed)
+- **Access Token Generation**: Generate LiveKit JWT tokens for participants to join rooms
+- **Join/Leave Endpoints**: API endpoints for joining and leaving livestreams
+- **Role-Based Permissions**: HOST (can publish) and VIEWER (can only subscribe) roles
+- **Webhook Handler**: Automatic participant tracking via LiveKit webhooks
+- **Participant Tracking**: Database records of all participants with join/leave timestamps
+- **Query Participants**: List active or historical participants with filters
+
 ## Future Enhancements
 
 ### Planned Features
-- Access token generation for clients to join rooms
-- Webhook handler for LiveKit events (room started, participant joined, etc.)
-- Room update endpoint (change settings)
-- Participant management
-- Recording and streaming capabilities
-- Analytics and usage tracking
-- Full authentication system (replace requestingUserId with JWT/session)
+- Room update endpoint (change settings like maxParticipants, emptyTimeout)
+- Recording and streaming capabilities (record livestreams, stream to RTMP)
+- Analytics and usage tracking (viewer counts, watch time, engagement metrics)
+- Full authentication system (replace userId/requestingUserId with JWT/session middleware)
+- Invite system (private livestreams with invite codes)
+- Chat functionality (real-time messaging during livestreams)
 
 ### Infrastructure
 - Add testing (Jest, Vitest, React Testing Library)
@@ -419,4 +607,11 @@ HTTP Request
 - API uses `/api/v1/` versioning for future compatibility
 - Room names are sanitized to be LiveKit-compatible (alphanumeric, hyphens, underscores)
 - Livestream status transitions automatically: SCHEDULED → LIVE (or ERROR if creation fails)
+- **Participant Management**: Users join via API, receive JWT tokens, and are tracked in database
+  - Only livestream creators can join as HOST role
+  - Access tokens expire after TOKEN_EXPIRATION_HOURS (default: 24 hours)
+  - Webhooks automatically update participant status when they leave
+- **Webhooks**: LiveKit sends signed webhooks for events (participant_joined, participant_left, room_finished, etc.)
+  - Signature verification prevents unauthorized webhook calls
+  - Webhook handler is idempotent and returns 200 even on errors to prevent retries
 - Always maintain TypeScript type safety across both client and server

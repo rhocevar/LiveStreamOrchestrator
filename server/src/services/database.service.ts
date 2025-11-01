@@ -139,6 +139,153 @@ class DatabaseService {
   }
 
   /**
+   * Create a new participant record
+   */
+  async createParticipant(data: Prisma.ParticipantCreateInput): Promise<any> {
+    try {
+      return await this.prisma.participant.create({ data });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2003') {
+          throw new NotFoundError('Livestream not found');
+        }
+      }
+      throw new DatabaseError('Failed to create participant record');
+    }
+  }
+
+  /**
+   * Get a participant by ID
+   */
+  async getParticipantById(id: string): Promise<any> {
+    try {
+      const participant = await this.prisma.participant.findUnique({
+        where: { id },
+        include: { livestream: true },
+      });
+
+      if (!participant) {
+        throw new NotFoundError(`Participant with ID ${id} not found`);
+      }
+
+      return participant;
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+      throw new DatabaseError('Failed to fetch participant');
+    }
+  }
+
+  /**
+   * Get active participant by user ID and livestream ID
+   */
+  async getActiveParticipant(
+    userId: string,
+    livestreamId: string
+  ): Promise<any | null> {
+    try {
+      return await this.prisma.participant.findFirst({
+        where: {
+          userId,
+          livestreamId,
+          status: 'JOINED',
+        },
+      });
+    } catch (error) {
+      throw new DatabaseError('Failed to fetch participant');
+    }
+  }
+
+  /**
+   * List participants for a livestream with optional filters
+   */
+  async listParticipants(filters?: {
+    livestreamId?: string;
+    userId?: string;
+    status?: 'JOINED' | 'LEFT';
+    role?: 'HOST' | 'VIEWER';
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    try {
+      const where: Prisma.ParticipantWhereInput = {};
+
+      if (filters?.livestreamId) {
+        where.livestreamId = filters.livestreamId;
+      }
+
+      if (filters?.userId) {
+        where.userId = filters.userId;
+      }
+
+      if (filters?.status) {
+        where.status = filters.status;
+      }
+
+      if (filters?.role) {
+        where.role = filters.role;
+      }
+
+      return await this.prisma.participant.findMany({
+        where,
+        take: filters?.limit,
+        skip: filters?.offset,
+        orderBy: { joinedAt: 'desc' },
+        include: { livestream: true },
+      });
+    } catch (error) {
+      throw new DatabaseError('Failed to list participants');
+    }
+  }
+
+  /**
+   * Update a participant
+   */
+  async updateParticipant(
+    id: string,
+    data: Prisma.ParticipantUpdateInput
+  ): Promise<any> {
+    try {
+      return await this.prisma.participant.update({
+        where: { id },
+        data,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundError(`Participant with ID ${id} not found`);
+        }
+      }
+      throw new DatabaseError('Failed to update participant');
+    }
+  }
+
+  /**
+   * Mark participant as left by userId and livestreamId
+   */
+  async markParticipantAsLeft(
+    userId: string,
+    livestreamId: string
+  ): Promise<void> {
+    try {
+      await this.prisma.participant.updateMany({
+        where: {
+          userId,
+          livestreamId,
+          status: 'JOINED',
+        },
+        data: {
+          status: 'LEFT',
+          leftAt: new Date(),
+        },
+      });
+    } catch (error) {
+      throw new DatabaseError('Failed to update participant status');
+    }
+  }
+
+  /**
    * Disconnect from database (for graceful shutdown)
    */
   async disconnect(): Promise<void> {

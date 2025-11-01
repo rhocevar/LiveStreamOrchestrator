@@ -8,9 +8,14 @@ import { livekitService } from './livekit.service.js';
 import type {
   CreateLivestreamRequest,
   LivestreamResponse,
-  Livestream
+  Livestream,
+  JoinLivestreamRequest,
+  JoinLivestreamResponse,
+  LeaveLivestreamRequest,
+  ParticipantResponse,
+  WebhookEvent
 } from '../types/livestream.types.js';
-import { ValidationError, ConflictError, AuthorizationError } from '../utils/errors.js';
+import { ValidationError, ConflictError, AuthorizationError, NotFoundError } from '../utils/errors.js';
 
 class LivestreamService {
   /**
@@ -178,6 +183,211 @@ class LivestreamService {
   }
 
   /**
+   * Join a livestream
+   * 1. Verify the livestream exists and is LIVE
+   * 2. Validate the join request
+   * 3. Check if user is already joined
+   * 4. Create participant record
+   * 5. Generate access token
+   *
+   * @param livestreamId The livestream ID
+   * @param data Join request data
+   */
+  async joinLivestream(
+    livestreamId: string,
+    data: JoinLivestreamRequest
+  ): Promise<JoinLivestreamResponse> {
+    // Validate input
+    this.validateJoinRequest(data);
+
+    // Get the livestream
+    const livestream = await databaseService.getLivestreamById(livestreamId);
+
+    // Check if livestream is LIVE
+    if (livestream.status !== 'LIVE') {
+      throw new ValidationError(
+        `Cannot join livestream with status ${livestream.status}. Livestream must be LIVE.`
+      );
+    }
+
+    // Check if user is already an active participant
+    const existingParticipant = await databaseService.getActiveParticipant(
+      data.userId,
+      livestreamId
+    );
+
+    if (existingParticipant) {
+      throw new ConflictError(
+        'User is already an active participant in this livestream'
+      );
+    }
+
+    // Only the creator can join as HOST
+    if (data.role === 'HOST' && livestream.createdBy !== data.userId) {
+      throw new AuthorizationError(
+        'Only the livestream creator can join as HOST'
+      );
+    }
+
+    // Create participant record
+    const participant = await databaseService.createParticipant({
+      livestream: { connect: { id: livestreamId } },
+      userId: data.userId,
+      displayName: data.displayName,
+      role: data.role,
+      status: 'JOINED',
+      metadata: data.metadata || undefined,
+    });
+
+    // Generate access token
+    const token = await livekitService.generateAccessToken({
+      roomName: livestream.roomName,
+      participantIdentity: data.userId,
+      participantName: data.displayName,
+      role: data.role,
+      metadata: JSON.stringify(data.metadata || {}),
+    });
+
+    return {
+      token,
+      url: livekitService.getLiveKitUrl(),
+      participant: this.formatParticipantResponse(participant),
+    };
+  }
+
+  /**
+   * Leave a livestream
+   * Updates participant status to LEFT
+   *
+   * @param livestreamId The livestream ID
+   * @param data Leave request data
+   */
+  async leaveLivestream(
+    livestreamId: string,
+    data: LeaveLivestreamRequest
+  ): Promise<void> {
+    // Validate input
+    if (!data.userId || data.userId.trim().length === 0) {
+      throw new ValidationError('User ID is required');
+    }
+
+    // Verify livestream exists
+    await databaseService.getLivestreamById(livestreamId);
+
+    // Mark participant as left
+    await databaseService.markParticipantAsLeft(data.userId, livestreamId);
+  }
+
+  /**
+   * List participants for a livestream
+   */
+  async listParticipants(filters?: {
+    livestreamId?: string;
+    userId?: string;
+    status?: 'JOINED' | 'LEFT';
+    role?: 'HOST' | 'VIEWER';
+    limit?: number;
+    offset?: number;
+  }): Promise<ParticipantResponse[]> {
+    const participants = await databaseService.listParticipants(filters);
+    return participants.map(p => this.formatParticipantResponse(p));
+  }
+
+  /**
+   * Handle LiveKit webhook events
+   * Updates participant status based on LiveKit events
+   *
+   * @param event Webhook event from LiveKit
+   */
+  async handleWebhookEvent(event: WebhookEvent): Promise<void> {
+    console.log('Received webhook event:', event.event);
+
+    try {
+      switch (event.event) {
+        case 'participant_joined':
+          // LiveKit confirmed participant joined
+          // We already created the record when generating the token
+          console.log(
+            `Participant ${event.participant?.identity} joined room ${event.room?.name}`
+          );
+          break;
+
+        case 'participant_left':
+          // LiveKit confirmed participant left
+          if (event.participant && event.room) {
+            const livestream = await databaseService.getLivestreamByRoomName(
+              event.room.name
+            );
+            if (livestream) {
+              await databaseService.markParticipantAsLeft(
+                event.participant.identity,
+                livestream.id
+              );
+              console.log(
+                `Participant ${event.participant.identity} left room ${event.room.name}`
+              );
+            }
+          }
+          break;
+
+        case 'room_started':
+          console.log(`Room ${event.room?.name} started`);
+          break;
+
+        case 'room_finished':
+          // Room ended - mark all active participants as left
+          if (event.room) {
+            const livestream = await databaseService.getLivestreamByRoomName(
+              event.room.name
+            );
+            if (livestream) {
+              const activeParticipants = await databaseService.listParticipants({
+                livestreamId: livestream.id,
+                status: 'JOINED',
+              });
+
+              // Mark all active participants as left
+              for (const participant of activeParticipants) {
+                await databaseService.markParticipantAsLeft(
+                  participant.userId,
+                  livestream.id
+                );
+              }
+
+              console.log(
+                `Room ${event.room.name} finished, marked ${activeParticipants.length} participants as left`
+              );
+            }
+          }
+          break;
+
+        default:
+          console.log(`Unhandled webhook event: ${event.event}`);
+      }
+    } catch (error) {
+      console.error('Error handling webhook event:', error);
+      // Don't throw - we don't want to fail webhook processing
+    }
+  }
+
+  /**
+   * Validate join livestream request
+   */
+  private validateJoinRequest(data: JoinLivestreamRequest): void {
+    if (!data.userId || data.userId.trim().length === 0) {
+      throw new ValidationError('User ID is required');
+    }
+
+    if (!data.displayName || data.displayName.trim().length === 0) {
+      throw new ValidationError('Display name is required');
+    }
+
+    if (!data.role || !['HOST', 'VIEWER'].includes(data.role)) {
+      throw new ValidationError('Role must be either HOST or VIEWER');
+    }
+  }
+
+  /**
    * Format livestream for API response
    */
   private formatLivestreamResponse(livestream: Livestream): LivestreamResponse {
@@ -195,6 +405,23 @@ class LivestreamService {
       updatedAt: livestream.updatedAt,
       startedAt: livestream.startedAt,
       endedAt: livestream.endedAt,
+    };
+  }
+
+  /**
+   * Format participant for API response
+   */
+  private formatParticipantResponse(participant: any): ParticipantResponse {
+    return {
+      id: participant.id,
+      livestreamId: participant.livestreamId,
+      userId: participant.userId,
+      displayName: participant.displayName,
+      role: participant.role,
+      status: participant.status,
+      metadata: participant.metadata as Record<string, unknown> | null,
+      joinedAt: participant.joinedAt,
+      leftAt: participant.leftAt,
     };
   }
 }

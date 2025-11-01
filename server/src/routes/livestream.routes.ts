@@ -5,7 +5,11 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { livestreamService } from '../services/livestream.service.js';
-import type { CreateLivestreamRequest } from '../types/livestream.types.js';
+import type {
+  CreateLivestreamRequest,
+  JoinLivestreamRequest,
+  LeaveLivestreamRequest
+} from '../types/livestream.types.js';
 
 const router = Router();
 
@@ -108,6 +112,98 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
       success: true,
       message: 'Livestream deleted successfully',
       data: livestream,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/livestreams/:id/join
+ * Join a livestream and get an access token
+ *
+ * Request body:
+ * {
+ *   "userId": "user-id-123",
+ *   "displayName": "John Doe",
+ *   "role": "VIEWER",  // or "HOST" (only creator can be HOST)
+ *   "metadata": { ... } // optional
+ * }
+ *
+ * Note: In production, userId would come from authentication middleware
+ */
+router.post('/:id/join', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const requestData: JoinLivestreamRequest = req.body;
+
+    const result = await livestreamService.joinLivestream(id!, requestData);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/livestreams/:id/leave
+ * Leave a livestream
+ *
+ * Request body:
+ * {
+ *   "userId": "user-id-123"
+ * }
+ *
+ * Note: In production, userId would come from authentication middleware
+ */
+router.post('/:id/leave', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const requestData: LeaveLivestreamRequest = req.body;
+
+    await livestreamService.leaveLivestream(id!, requestData);
+
+    res.status(200).json({
+      success: true,
+      message: 'Left livestream successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/v1/livestreams/:id/participants
+ * Get list of participants for a livestream
+ *
+ * Query parameters:
+ * - status: Filter by status (JOINED or LEFT)
+ * - role: Filter by role (HOST or VIEWER)
+ * - limit: Number of results to return
+ * - offset: Number of results to skip
+ */
+router.get('/:id/participants', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { status, role, limit, offset } = req.query;
+
+    const filters = {
+      livestreamId: id,
+      status: status as 'JOINED' | 'LEFT' | undefined,
+      role: role as 'HOST' | 'VIEWER' | undefined,
+      limit: limit ? parseInt(limit as string, 10) : undefined,
+      offset: offset ? parseInt(offset as string, 10) : undefined,
+    };
+
+    const participants = await livestreamService.listParticipants(filters);
+
+    res.status(200).json({
+      success: true,
+      data: participants,
+      count: participants.length,
     });
   } catch (error) {
     next(error);
