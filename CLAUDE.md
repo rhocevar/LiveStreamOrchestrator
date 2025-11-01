@@ -454,7 +454,7 @@ model Livestream {
   status           LivestreamStatus  @default(SCHEDULED)
   createdBy        String
   maxParticipants  Int               @default(100)
-  emptyTimeout     Int               @default(600)
+  emptyTimeout     Int               @default(86400)
   metadata         Json?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt

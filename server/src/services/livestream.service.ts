@@ -48,7 +48,7 @@ class LivestreamService {
       description: data.description,
       createdBy: data.createdBy,
       maxParticipants: data.maxParticipants ?? 100,
-      emptyTimeout: data.emptyTimeout ?? 600,
+      emptyTimeout: data.emptyTimeout ?? 86400,
       metadata: data.metadata ?? undefined,
       status: 'SCHEDULED',
     });
