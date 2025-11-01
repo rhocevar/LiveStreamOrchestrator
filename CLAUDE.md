@@ -2,41 +2,123 @@
 
 ## Project Overview
 
-**Favorited** is a React-based web application built with Vite and TypeScript. The project integrates LiveKit for real-time communication capabilities.
+**Favorited** is a full-stack TypeScript application for managing livestreams with LiveKit. The project consists of:
+- **Server**: Node.js/Express API (Livestream Orchestrator) for managing LiveKit room lifecycle and state
+- **Client**: React web application for the frontend
 
 ## Tech Stack
 
-- **Frontend Framework**: React 19.1.1
+### Server (API)
+- **Runtime**: Node.js with TypeScript 5.9.3
+- **Framework**: Express.js 4.21.2
+- **Database**: PostgreSQL with Prisma ORM 6.2.0
+- **Real-time Communication**: LiveKit Server SDK 2.14.0
+- **Dev Tools**: tsx (TypeScript execution)
+
+### Client (Frontend)
+- **Framework**: React 19.1.1
 - **Build Tool**: Vite 7.1.7
 - **Language**: TypeScript 5.9.3
-- **Real-time Communication**: LiveKit Server SDK 2.14.0
 - **Linting**: ESLint 9.36.0
 
 ## Project Structure
 
 ```
-favorited/
-├── src/
-│   ├── assets/          # Static assets (images, icons, etc.)
-│   ├── App.tsx          # Main application component
-│   ├── App.css          # Application styles
-│   ├── main.tsx         # Application entry point
-│   └── index.css        # Global styles
-├── public/              # Public static files
-├── index.html           # HTML entry point
-├── package.json         # Dependencies and scripts
-├── tsconfig.json        # TypeScript configuration
-├── vite.config.ts       # Vite configuration
-└── eslint.config.js     # ESLint configuration
+favorited/                    # Monorepo root
+├── server/                   # Backend API
+│   ├── src/
+│   │   ├── services/         # Service layer (business logic)
+│   │   │   ├── livekit.service.ts     # LiveKit API integration
+│   │   │   ├── database.service.ts    # Prisma database operations
+│   │   │   └── livestream.service.ts  # Orchestration layer
+│   │   ├── routes/           # API routes
+│   │   │   └── livestream.routes.ts   # Livestream endpoints
+│   │   ├── types/            # TypeScript type definitions
+│   │   │   └── livestream.types.ts
+│   │   ├── utils/            # Utility functions
+│   │   │   └── errors.ts     # Custom error classes
+│   │   └── index.ts          # Express server entry point
+│   ├── prisma/
+│   │   ├── schema.prisma     # Database schema
+│   │   └── migrations/       # Database migrations
+│   ├── .env                  # Environment variables (DO NOT COMMIT)
+│   ├── .env.example          # Environment template
+│   ├── package.json          # Server dependencies
+│   └── tsconfig.json         # Server TypeScript config
+│
+├── client/                   # Frontend React app
+│   ├── src/
+│   │   ├── assets/           # Static assets
+│   │   ├── App.tsx           # Main component
+│   │   ├── App.css           # Application styles
+│   │   ├── main.tsx          # Entry point
+│   │   └── index.css         # Global styles
+│   ├── public/               # Public static files
+│   ├── index.html            # HTML entry point
+│   ├── package.json          # Client dependencies
+│   ├── tsconfig.json         # Client TypeScript config
+│   ├── vite.config.ts        # Vite configuration
+│   └── eslint.config.js      # ESLint configuration
+│
+├── package.json              # Root monorepo scripts
+├── CLAUDE.md                 # This file
+└── README.md                 # Project readme
 ```
 
 ## Development Commands
+
+### From Root Directory
+
+```bash
+# Install all dependencies (client + server)
+npm run install:all
+
+# Start both client and server in dev mode
+npm run dev
+
+# Start only server
+npm run dev:server
+
+# Start only client
+npm run dev:client
+
+# Build both client and server
+npm run build
+
+# Prisma commands (database)
+npm run prisma:generate      # Generate Prisma client
+npm run prisma:migrate       # Run database migrations
+npm run prisma:studio        # Open Prisma Studio (DB GUI)
+```
+
+### Server Commands (from /server)
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server with HMR
+# Start development server with hot reload
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+
+# Database operations
+npm run prisma:generate      # Generate Prisma client types
+npm run prisma:migrate       # Create and run migrations
+npm run prisma:studio        # Database management GUI
+```
+
+### Client Commands (from /client)
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
 
 # Build for production
@@ -49,7 +131,181 @@ npm run preview
 npm run lint
 ```
 
+## API Documentation
+
+### Base URL
+- Development: `http://localhost:3001/api/v1`
+- Health Check: `http://localhost:3001/health`
+
+### Endpoints
+
+#### Create Livestream
+```http
+POST /api/v1/livestreams
+Content-Type: application/json
+
+{
+  "roomName": "my-livestream",
+  "title": "My Awesome Livestream",
+  "description": "Optional description",
+  "createdBy": "user-id-123",
+  "maxParticipants": 100,
+  "emptyTimeout": 600,
+  "metadata": { "key": "value" }
+}
+
+Response: 201 Created
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "roomName": "my-livestream",
+    "title": "My Awesome Livestream",
+    "status": "LIVE",
+    "createdBy": "user-id-123",
+    "maxParticipants": 100,
+    "emptyTimeout": 600,
+    "createdAt": "2025-11-01T...",
+    "startedAt": "2025-11-01T...",
+    ...
+  }
+}
+```
+
+#### List Livestreams
+```http
+GET /api/v1/livestreams?status=LIVE&limit=10&offset=0
+
+Response: 200 OK
+{
+  "success": true,
+  "data": [...],
+  "count": 10
+}
+```
+
+#### Get Livestream by ID
+```http
+GET /api/v1/livestreams/:id
+
+Response: 200 OK
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+### Livestream Status Flow
+- **SCHEDULED**: Created in database, waiting for LiveKit room creation
+- **LIVE**: LiveKit room successfully created and active
+- **ENDED**: Livestream has concluded (future feature)
+- **ERROR**: LiveKit room creation failed
+
+## Environment Setup
+
+### Server Environment Variables
+
+Copy `server/.env.example` to `server/.env` and configure:
+
+```bash
+# Server Configuration
+NODE_ENV=development
+PORT=3001
+
+# Database (PostgreSQL)
+DATABASE_URL="postgresql://user:password@localhost:5432/favorited?schema=public"
+
+# LiveKit Credentials (get from https://cloud.livekit.io)
+LIVEKIT_URL=https://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+```
+
+### Database Setup
+
+1. Install PostgreSQL locally or use a hosted service
+2. Create a database: `createdb favorited`
+3. Update `DATABASE_URL` in `.env`
+4. Run migrations: `npm run prisma:migrate`
+5. Generate Prisma client: `npm run prisma:generate`
+
+Alternatively, use Prisma's local dev database:
+```bash
+cd server
+npx prisma dev
+```
+
+### LiveKit Setup
+
+**Option 1: LiveKit Cloud (Recommended for development)**
+1. Sign up at [cloud.livekit.io](https://cloud.livekit.io)
+2. Create a new project
+3. Copy credentials to `.env`
+
+**Option 2: Local LiveKit Server**
+```bash
+# Install LiveKit server
+brew install livekit  # macOS
+# or download from livekit.io/download
+
+# Run in dev mode
+livekit-server --dev
+
+# Use these credentials in .env:
+LIVEKIT_URL=ws://localhost:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+## Database Schema
+
+### Livestream Model
+```prisma
+model Livestream {
+  id               String            @id @default(uuid())
+  roomName         String            @unique
+  title            String
+  description      String?
+  status           LivestreamStatus  @default(SCHEDULED)
+  createdBy        String
+  maxParticipants  Int               @default(100)
+  emptyTimeout     Int               @default(600)
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  startedAt        DateTime?
+  endedAt          DateTime?
+}
+
+enum LivestreamStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  ERROR
+}
+```
+
 ## Development Guidelines
+
+### Server-Side Best Practices
+- **Service Layer Pattern**: Business logic in services, routes handle HTTP only
+- **Error Handling**: Use custom error classes (ValidationError, NotFoundError, etc.)
+- **Type Safety**: All services and routes are fully typed with TypeScript
+- **Separation of Concerns**: LiveKit operations separate from database operations
+- **Graceful Shutdown**: Server handles SIGTERM/SIGINT for clean database disconnection
+
+### Client-Side Best Practices
+- Use functional components with hooks
+- Prefer `const` for component declarations
+- Use React 19 features when appropriate
+- Keep components small and focused on a single responsibility
+- Extract reusable logic into custom hooks
+
+### Code Style
+- Follow ESLint rules configured in the project
+- Use meaningful variable and function names
+- Keep files under 300 lines when possible
+- Add JSDoc comments for public APIs
 
 ### TypeScript
 - Use strict TypeScript configuration
@@ -57,32 +313,35 @@ npm run lint
 - Define explicit types for function parameters and return values
 - Use interfaces for object shapes
 
-### React Best Practices
-- Use functional components with hooks
-- Prefer `const` for component declarations
-- Use React 19 features when appropriate
-- Keep components small and focused on a single responsibility
+## Architecture
 
-### Code Style
-- Follow ESLint rules configured in the project
-- Use meaningful variable and function names
-- Keep files under 300 lines when possible
-- Extract reusable logic into custom hooks
+### Server Architecture Layers
 
-### File Organization
-- Components should be in `src/components/` (when created)
-- Custom hooks should be in `src/hooks/` (when created)
-- Utilities should be in `src/utils/` (when created)
-- Types should be co-located with their usage or in `src/types/` for shared types
+1. **Routes Layer** (`src/routes/`)
+   - HTTP request/response handling
+   - Request validation
+   - Response formatting
 
-## LiveKit Integration
+2. **Service Layer** (`src/services/`)
+   - **Livestream Service**: Orchestration and business logic
+   - **LiveKit Service**: LiveKit API interactions
+   - **Database Service**: Prisma database operations
 
-The project includes `livekit-server-sdk` for real-time communication features. When implementing LiveKit functionality:
+3. **Data Layer**
+   - Prisma ORM for type-safe database access
+   - PostgreSQL for persistent storage
 
-- Use environment variables for LiveKit API credentials
-- Implement proper error handling for connection failures
-- Consider connection state management
-- Handle cleanup on component unmount
+### Data Flow
+```
+HTTP Request
+  → Route Handler
+    → Livestream Service (orchestration)
+      → Database Service (save record)
+      → LiveKit Service (create room)
+      → Database Service (update status)
+    ← Response Formatting
+  ← HTTP Response
+```
 
 ## Git Workflow
 
@@ -90,48 +349,38 @@ The project includes `livekit-server-sdk` for real-time communication features. 
 - Commit messages should be clear and descriptive
 - Keep commits atomic and focused
 
-## Key Considerations for AI Assistance
+## Future Enhancements
 
-### When Adding Features
-1. Check if similar functionality already exists
-2. Follow the established project structure
-3. Add TypeScript types for all new code
-4. Consider responsive design for UI components
-5. Test in development mode before building
+### Planned Features
+- Access token generation for clients to join rooms
+- Webhook handler for LiveKit events (room started, participant joined, etc.)
+- Room deletion endpoint
+- Room update endpoint (change settings)
+- Participant management
+- Recording and streaming capabilities
+- Analytics and usage tracking
 
-### When Refactoring
-1. Maintain backward compatibility unless explicitly asked to break it
-2. Preserve existing functionality
-3. Update related documentation and comments
-4. Consider performance implications
+### Infrastructure
+- Add testing (Jest, Vitest, React Testing Library)
+- Add CI/CD pipelines
+- Add monitoring and logging (Winston, Sentry)
+- Add API documentation (Swagger/OpenAPI)
+- Add rate limiting and authentication
+- Docker containerization
 
-### When Debugging
-1. Check the browser console for errors
-2. Verify TypeScript compilation issues
-3. Check ESLint warnings
-4. Review React DevTools for component issues
+## Platform
 
-## Environment Setup
-
-This project runs on:
-- **Platform**: Windows (win32)
-- **Node.js**: Required for development
+- **OS**: Windows (win32)
+- **Node.js**: v18+ required
 - **Package Manager**: npm
-
-## Future Considerations
-
-As the project grows, consider:
-- Adding a component library or design system
-- Implementing state management (Context API, Zustand, or Redux)
-- Adding routing (React Router)
-- Implementing testing (Vitest, React Testing Library)
-- Adding CI/CD pipelines
-- Implementing proper LiveKit room and participant management
+- **Database**: PostgreSQL 14+
 
 ## Notes for AI
 
-- This is an early-stage project with basic Vite + React template structure
-- LiveKit has been installed but not yet integrated into the application
-- The project uses React 19, which includes the latest React features
-- Always maintain TypeScript type safety
-- Prefer modern React patterns (hooks, functional components)
+- Server uses modular service architecture for clean separation of concerns
+- All LiveKit operations go through the LiveKit service layer
+- Database operations use Prisma for type safety
+- API uses `/api/v1/` versioning for future compatibility
+- Room names are sanitized to be LiveKit-compatible (alphanumeric, hyphens, underscores)
+- Livestream status transitions automatically: SCHEDULED → LIVE (or ERROR if creation fails)
+- Always maintain TypeScript type safety across both client and server

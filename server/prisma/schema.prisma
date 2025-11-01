@@ -1,0 +1,41 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Livestream model for managing LiveKit room lifecycle and state
+model Livestream {
+  id               String            @id @default(uuid())
+  roomName         String            @unique
+  title            String
+  description      String?
+  status           LivestreamStatus  @default(SCHEDULED)
+  createdBy        String
+  maxParticipants  Int               @default(100)
+  emptyTimeout     Int               @default(600)
+  metadata         Json?
+
+  // Timestamps
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  startedAt        DateTime?
+  endedAt          DateTime?
+
+  @@map("livestreams")
+}
+
+// Enum for livestream status
+enum LivestreamStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  ERROR
+}
