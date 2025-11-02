@@ -5,6 +5,7 @@
 
 import { databaseService } from './database.service.js';
 import { livekitService } from './livekit.service.js';
+import { stateService } from './state.service.js';
 import type {
   CreateLivestreamRequest,
   LivestreamResponse,
@@ -62,10 +63,21 @@ class LivestreamService {
       });
 
       // Update database with LIVE status and startedAt timestamp
+      const startedAt = new Date();
       const updatedLivestream = await databaseService.updateLivestream(livestream.id, {
         status: 'LIVE',
-        startedAt: new Date(),
+        startedAt,
       });
+
+      // Initialize stream state in Redis
+      await stateService.initializeState(
+        updatedLivestream.id,
+        {
+          userId: data.createdBy,
+          displayName: data.title, // Using title as display name for creator
+        },
+        startedAt
+      );
 
       return this.formatLivestreamResponse(updatedLivestream);
     } catch (error) {
@@ -323,6 +335,12 @@ class LivestreamService {
                 console.log(
                   `[Service] Participant ${event.participant.identity} joined room ${event.room.name} (SID: ${event.participant.sid})`
                 );
+
+                // Update stream state (no SSE broadcast - internal state only)
+                await stateService.handleParticipantJoined(
+                  livestream.id,
+                  event.participant.identity
+                );
               } else {
                 console.warn(
                   `[Service] Could not find participant record for ${event.participant.identity} in ${event.room.name}`
@@ -342,7 +360,7 @@ class LivestreamService {
 
         case 'participant_left':
           // LiveKit confirmed participant left - use SID-based method (TRANSACTION-SAFE)
-          if (event.participant) {
+          if (event.participant && event.room) {
             const updated = await databaseService.markParticipantAsLeftBySid(
               event.participant.sid
             );
@@ -351,6 +369,17 @@ class LivestreamService {
               console.log(
                 `[Service] Participant ${event.participant.identity} left room (SID: ${event.participant.sid})`
               );
+
+              // Update stream state (no SSE broadcast - internal state only)
+              const livestream = await databaseService.getLivestreamByRoomName(
+                event.room.name
+              );
+              if (livestream) {
+                await stateService.handleParticipantLeft(
+                  livestream.id,
+                  event.participant.identity
+                );
+              }
             } else {
               console.log(
                 `[Service] Participant ${event.participant.identity} already marked as left or not found (SID: ${event.participant.sid})`
@@ -364,7 +393,24 @@ class LivestreamService {
           break;
 
         case 'room_started':
-          console.log(`[Service] Room ${event.room?.name} started`);
+          // Broadcast room_started event via SSE
+          if (event.room) {
+            const livestream = await databaseService.getLivestreamByRoomName(
+              event.room.name
+            );
+
+            if (livestream) {
+              const state = await stateService.getState(livestream.id);
+              if (state) {
+                await stateService.broadcastStateEvent(
+                  livestream.id,
+                  'room_started',
+                  state
+                );
+                console.log(`[Service] Room ${event.room.name} started - broadcast SSE event`);
+              }
+            }
+          }
           break;
 
         case 'room_finished':
@@ -402,6 +448,9 @@ class LivestreamService {
               console.log(
                 `[Service] Room ${event.room.name} finished, marked ${updatedCount} participants as left`
               );
+
+              // Handle room ended - updates state and broadcasts SSE event
+              await stateService.handleRoomEnded(livestream.id);
             }
           }
           break;

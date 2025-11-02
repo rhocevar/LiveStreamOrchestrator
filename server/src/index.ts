@@ -7,9 +7,11 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import livestreamRoutes from './routes/livestream.routes.js';
+import stateRoutes from './routes/state.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
 import { databaseService } from './services/database.service.js';
 import { queueService } from './services/queue.service.js';
+import { stateService } from './services/state.service.js';
 import { startWebhookWorker, stopWebhookWorker } from './workers/webhook.worker.js';
 import { startCleanupJob, stopCleanupJob } from './jobs/webhook-cleanup.job.js';
 import { AppError } from './utils/errors.js';
@@ -56,8 +58,11 @@ app.get('/health', async (_req: Request, res: Response) => {
     // Get queue health status
     const queueHealth = await queueService.getHealthStatus();
 
+    // Get state service health status
+    const stateHealth = await stateService.getHealthStatus();
+
     // Overall health status
-    const isHealthy = redisConnected && queueHealth.isHealthy;
+    const isHealthy = redisConnected && queueHealth.isHealthy && stateHealth.isHealthy;
 
     res.status(isHealthy ? 200 : 503).json({
       success: isHealthy,
@@ -92,6 +97,16 @@ app.get('/health', async (_req: Request, res: Response) => {
             failed: queueHealth.failed,
           } : undefined,
         },
+        state: {
+          status: stateHealth.isHealthy ? 'healthy' : 'unhealthy',
+          message: stateHealth.isHealthy
+            ? 'State service operational'
+            : 'State service unavailable',
+          details: stateHealth.isHealthy ? {
+            activeConnections: stateHealth.activeConnections,
+            subscribedStreams: stateHealth.subscribedStreams,
+          } : undefined,
+        },
       },
     });
   } catch (error) {
@@ -107,6 +122,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 
 // API v1 routes
 app.use('/api/v1/livestreams', livestreamRoutes);
+app.use('/api/v1/livestreams', stateRoutes); // State routes for /livestreams/:id/state and /livestreams/:id/events
 app.use('/api/v1/webhooks', webhookRoutes);
 
 // 404 handler for undefined routes
@@ -205,6 +221,14 @@ async function shutdown() {
     // Stop webhook worker (wait for in-flight jobs to complete)
     await stopWebhookWorker();
     console.log('✓ Webhook worker stopped');
+
+    // Shutdown state service (close SSE connections and Redis)
+    await stateService.shutdown();
+    console.log('✓ State service shutdown');
+
+    // Shutdown queue service
+    await queueService.shutdown();
+    console.log('✓ Queue service shutdown');
 
     // Disconnect from database
     await databaseService.disconnect();

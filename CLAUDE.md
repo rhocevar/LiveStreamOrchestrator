@@ -14,6 +14,8 @@
 - **Database**: PostgreSQL with Prisma ORM 6.2.0
 - **Real-time Communication**: LiveKit Server SDK 2.14.0
 - **Message Queue**: BullMQ with Redis (for webhook processing)
+- **State Management**: Redis for ephemeral stream state (24h TTL)
+- **Real-time Updates**: Server-Sent Events (SSE) with Redis Pub/Sub
 - **Dev Tools**: tsx (TypeScript execution)
 
 ### Client (Frontend)
@@ -32,9 +34,11 @@ favorited/                    # Monorepo root
 │   │   │   ├── livekit.service.ts     # LiveKit API integration
 │   │   │   ├── database.service.ts    # Prisma database operations
 │   │   │   ├── livestream.service.ts  # Orchestration layer
-│   │   │   └── queue.service.ts       # Redis queue for webhook processing
+│   │   │   ├── queue.service.ts       # Redis queue for webhook processing
+│   │   │   └── state.service.ts       # Real-time stream state tracking
 │   │   ├── routes/           # API routes
 │   │   │   ├── livestream.routes.ts   # Livestream endpoints
+│   │   │   ├── state.routes.ts        # Stream state endpoints (SSE)
 │   │   │   └── webhook.routes.ts      # LiveKit webhook receiver
 │   │   ├── workers/          # Background job processors
 │   │   │   └── webhook.worker.ts      # Processes webhooks from queue
@@ -346,6 +350,127 @@ Query Parameters:
 - offset: Number of results to skip
 ```
 
+#### Get Stream State
+```http
+GET /api/v1/livestreams/:id/state
+
+Response: 200 OK
+{
+  "success": true,
+  "data": {
+    "streamId": "abc123",
+    "status": "LIVE",
+    "participants": ["user-id-123", "user-id-456"],
+    "startedAt": "2025-11-02T10:00:00Z",
+    "viewerCount": 2,
+    "totalViewers": 5,
+    "peakViewerCount": 3,
+    "hostInfo": {
+      "userId": "user-id-123",
+      "displayName": "My Awesome Livestream"
+    }
+  }
+}
+
+Error Responses:
+- 400: Livestream ID is required
+- 404: Stream state not found
+```
+
+**Get State Behavior:**
+- **Ephemeral**: State is stored in Redis with 24-hour TTL
+- **Real-time**: Reflects current stream status
+- **No Authentication**: Public endpoint (anyone can view state)
+- **State Properties**:
+  - `streamId`: Livestream unique identifier
+  - `status`: Current status ("LIVE" or "ENDED")
+  - `participants`: Array of active participant user IDs
+  - `startedAt`: ISO 8601 timestamp when stream started
+  - `viewerCount`: Current number of viewers
+  - `totalViewers`: Total number of unique viewers (all-time)
+  - `peakViewerCount`: Highest concurrent viewer count
+  - `hostInfo`: Creator information
+
+#### Subscribe to Stream Events (SSE)
+```http
+GET /api/v1/livestreams/:id/events
+
+Response: 200 OK (Server-Sent Events stream)
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+
+event: state
+data: {"streamId":"abc123","status":"LIVE",...}
+
+event: room_started
+data: {"streamId":"abc123","status":"LIVE",...}
+
+event: viewer_count_update
+data: {"streamId":"abc123","viewerCount":5,...}
+
+event: room_ended
+data: {"streamId":"abc123","status":"ENDED",...}
+
+Error Responses:
+- 400: Livestream ID is required
+- 404: Stream state not found
+```
+
+**SSE Behavior:**
+- **Long-lived Connection**: Keeps HTTP connection open for real-time updates
+- **Event Types**:
+  - `state`: Initial state sent immediately on connection (always first event)
+  - `room_started`: Stream goes live (broadcast to all subscribers)
+  - `viewer_count_update`: Viewer count changed (throttled - see below)
+  - `room_ended`: Stream finishes (broadcast, then connection closes)
+- **Throttling**: Viewer count updates are throttled to prevent excessive broadcasts:
+  - Maximum 1 update per 5 seconds
+  - Only broadcast if count changes by ≥10% OR ≥5 viewers
+- **Automatic Reconnection**: Browser `EventSource` API handles reconnection
+- **No Authentication**: Public endpoint (anyone can subscribe)
+
+**Client Example (JavaScript/Browser):**
+```javascript
+const eventSource = new EventSource('http://localhost:3001/api/v1/livestreams/abc123/events');
+
+// Initial state (sent immediately)
+eventSource.addEventListener('state', (e) => {
+  const state = JSON.parse(e.data);
+  console.log('Current state:', state);
+  updateUI(state);
+});
+
+// Room lifecycle events
+eventSource.addEventListener('room_started', (e) => {
+  const state = JSON.parse(e.data);
+  console.log('Stream started:', state);
+  showNotification('Stream is now live!');
+});
+
+eventSource.addEventListener('room_ended', (e) => {
+  const state = JSON.parse(e.data);
+  console.log('Stream ended:', state);
+  showNotification('Stream has ended');
+  eventSource.close(); // Clean up
+});
+
+// Viewer count updates
+eventSource.addEventListener('viewer_count_update', (e) => {
+  const state = JSON.parse(e.data);
+  console.log('Viewers:', state.viewerCount);
+  updateViewerCount(state.viewerCount);
+});
+
+// Error handling
+eventSource.onerror = (error) => {
+  console.error('SSE error:', error);
+  eventSource.close();
+};
+```
+
+**Note**: Participant join/leave events update internal state but do NOT trigger SSE broadcasts. Only room lifecycle and viewer count changes are broadcast.
+
 #### LiveKit Webhook
 ```http
 POST /api/v1/webhooks/livekit
@@ -376,10 +501,11 @@ Response: 200 OK
 **Webhook Behavior:**
 - **Signature Verification**: Validates webhook came from LiveKit
 - **Events Handled**:
-  - `participant_joined`: Logs participant connection (record already created during join)
-  - `participant_left`: Automatically marks participant as LEFT in database
-  - `room_started`: Logs room activation
-  - `room_finished`: Marks all active participants as LEFT
+  - `participant_joined`: Logs participant connection (record already created during join) + updates stream state (no SSE broadcast)
+  - `participant_left`: Automatically marks participant as LEFT in database + updates stream state (no SSE broadcast)
+  - `room_started`: Logs room activation + broadcasts SSE event to subscribers
+  - `room_finished`: Marks all active participants as LEFT + broadcasts SSE event + closes SSE connections
+- **State Updates**: Webhooks automatically update stream state in Redis and trigger SSE broadcasts where applicable
 - **Automatic**: No manual setup required - just configure URL in LiveKit dashboard
 - **Configuration**: Set webhook URL in LiveKit dashboard to: `https://yourapp.com/api/v1/webhooks/livekit`
 
@@ -906,6 +1032,110 @@ model WebhookEvent {
 }
 ```
 
+## Stream State Tracking Architecture
+
+### Overview
+The system implements real-time stream state tracking using Redis for ephemeral storage and Server-Sent Events (SSE) for push-based client updates. State updates are triggered by LiveKit webhook events and broadcast to subscribed clients.
+
+### Architecture Flow
+```
+Client → SSE Subscribe → State Service → Redis Pub/Sub
+  ↓                          ↓
+SSE Connection          Subscribe to Channel
+  ↓                          ↓
+Receive Events    ←─────  Redis Publish
+                              ↑
+Webhook → Queue → Worker → Update State → Publish Event
+```
+
+### Components
+
+#### 1. State Service (`state.service.ts`)
+- **Responsibility**: Manage stream state and SSE connections
+- **Redis Operations**:
+  - Store state in Redis hashes with 24h TTL
+  - Publish state events via Redis Pub/Sub
+  - Subscribe to state channels for SSE broadcasting
+- **SSE Management**:
+  - Maintain active SSE connections per stream
+  - Broadcast events to all subscribers
+  - Graceful connection cleanup on errors/shutdown
+- **Viewer Count Throttling**:
+  - Throttle broadcasts (max 1 per 5 seconds)
+  - Threshold: ≥10% change OR ≥5 viewers
+  - Prevents excessive SSE traffic
+
+#### 2. State Routes (`state.routes.ts`)
+- **GET /livestreams/:id/state**: Return current state snapshot
+- **GET /livestreams/:id/events**: Establish SSE connection
+
+#### 3. Redis State Storage
+- **Key Pattern**: `stream:state:{livestreamId}`
+- **Data Structure**: JSON-serialized StreamState object
+- **TTL**: 24 hours (automatic cleanup)
+- **Pub/Sub Channel**: `stream:events:{livestreamId}`
+
+#### 4. Integration with Webhooks
+Webhook events trigger state updates:
+- **participant_joined**: Update state (participants, viewerCount, totalViewers, peak)
+- **participant_left**: Update state (participants, viewerCount)
+- **room_started**: Broadcast SSE event to subscribers
+- **room_finished**: Update state to ENDED + broadcast SSE + close connections
+
+### State Object Structure
+```typescript
+{
+  streamId: string;           // Livestream ID
+  status: "LIVE" | "ENDED";   // Current status
+  participants: string[];      // Array of active user IDs
+  startedAt: string;          // ISO 8601 timestamp
+  viewerCount: number;        // Current viewers
+  totalViewers: number;       // All-time unique viewers
+  peakViewerCount: number;    // Highest concurrent viewers
+  hostInfo: {
+    userId: string;
+    displayName: string;
+  };
+}
+```
+
+### SSE Event Types
+- **state**: Initial state (sent immediately on connection)
+- **room_started**: Stream goes live
+- **viewer_count_update**: Viewer count changed (throttled)
+- **room_ended**: Stream finished
+
+### Scalability
+- **Current**: Single server handles ~1,000 concurrent participants per stream
+- **Horizontal Scaling**: Multiple servers share Redis Pub/Sub (fan-out to all subscribers)
+- **Connection Distribution**: SSE connections distributed across servers
+- **State Consistency**: Redis ensures consistent state across servers
+
+### Monitoring
+State service health metrics available via `/health` endpoint:
+```json
+{
+  "state": {
+    "status": "healthy",
+    "details": {
+      "activeConnections": 50,     // Total SSE connections
+      "subscribedStreams": 10      // Streams with active subscriptions
+    }
+  }
+}
+```
+
+### Lifecycle Management
+- **Initialization**: State created when livestream goes LIVE
+- **Updates**: Triggered by webhook events (participant join/leave)
+- **Broadcasts**: Only room lifecycle and viewer count updates
+- **Cleanup**: Automatic TTL-based expiration (24h) + manual cleanup on room_ended
+
+### Error Handling
+- **SSE Connection Errors**: Gracefully close connection, client auto-reconnects
+- **Redis Pub/Sub Errors**: Log error, connection remains open for retry
+- **State Not Found**: Return 404 for GET requests, prevent SSE subscription
+
 ## Webhook Processing Architecture
 
 ### Overview
@@ -1205,4 +1435,13 @@ HTTP Request
 - **Webhooks**: LiveKit sends signed webhooks for events (participant_joined, participant_left, room_finished, etc.)
   - Signature verification prevents unauthorized webhook calls
   - Webhook handler is idempotent and returns 200 even on errors to prevent retries
+  - Webhooks trigger stream state updates and SSE broadcasts where applicable
+- **Stream State Tracking**: Real-time ephemeral state stored in Redis with Server-Sent Events for client updates
+  - State initialized when livestream goes LIVE
+  - Tracks viewer count, peak viewers, participants (user IDs), and host info
+  - SSE broadcasts: room_started, room_ended, viewer_count_update (throttled)
+  - Participant join/leave updates state but does NOT broadcast via SSE
+  - State TTL: 24 hours (automatic cleanup)
+  - SSE uses Redis Pub/Sub for multi-server scalability
+  - Public endpoints (no authentication required)
 - Always maintain TypeScript type safety across both client and server

@@ -137,3 +137,39 @@ export interface WebhookDeduplicationResult {
   isDuplicate: boolean;
   previouslyProcessedAt?: Date;
 }
+
+/**
+ * Stream state event types (SSE broadcasts)
+ */
+export type StateEventType = 'room_started' | 'room_ended' | 'viewer_count_update';
+
+/**
+ * Host information in stream state
+ */
+export interface HostInfo {
+  userId: string;
+  displayName: string;
+}
+
+/**
+ * Real-time stream state (stored in Redis)
+ */
+export interface StreamState {
+  streamId: string;
+  status: 'LIVE' | 'ENDED';
+  participants: string[]; // Array of user IDs
+  startedAt: string;
+  viewerCount: number; // Current viewers
+  totalViewers: number; // All-time total
+  peakViewerCount: number; // Highest concurrent
+  hostInfo: HostInfo;
+}
+
+/**
+ * Stream state event (SSE format)
+ */
+export interface StreamStateEvent {
+  type: StateEventType;
+  data: StreamState;
+  timestamp: string;
+}
