@@ -118,10 +118,8 @@ class LiveKitService {
         identity: options.participantIdentity,
         name: options.participantName,
         metadata: options.metadata,
+        ttl: `${expirationHours}h`, // Set expiration as time span string (e.g., "24h")
       });
-
-      // Set token expiration
-      token.ttl = expirationHours * 60 * 60; // Convert hours to seconds
 
       // Grant permissions based on role
       if (options.role === 'HOST') {
