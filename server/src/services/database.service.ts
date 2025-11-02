@@ -262,8 +262,99 @@ class DatabaseService {
   }
 
   /**
-   * Mark participant as left by userId and livestreamId
-   * Returns the number of participants updated (0 if already LEFT, making this idempotent)
+   * Update participant with LiveKit SIDs (called when participant_joined webhook received)
+   * @param userId - Application user ID
+   * @param livestreamId - Livestream ID
+   * @param livekitParticipantSid - LiveKit participant session ID
+   * @param livekitRoomSid - LiveKit room session ID
+   * @returns Updated participant or null if not found
+   */
+  async updateParticipantWithLiveKitSids(
+    userId: string,
+    livestreamId: string,
+    livekitParticipantSid: string,
+    livekitRoomSid: string
+  ): Promise<any | null> {
+    try {
+      // Find the most recent JOINED participant for this user/livestream
+      const participant = await this.prisma.participant.findFirst({
+        where: {
+          userId,
+          livestreamId,
+          status: 'JOINED',
+          livekitParticipantSid: null, // Only update if SID not already set
+        },
+        orderBy: { joinedAt: 'desc' },
+      });
+
+      if (!participant) {
+        return null;
+      }
+
+      // Update with LiveKit SIDs
+      return await this.prisma.participant.update({
+        where: { id: participant.id },
+        data: {
+          livekitParticipantSid,
+          livekitRoomSid,
+        },
+      });
+    } catch (error) {
+      throw new DatabaseError('Failed to update participant with LiveKit SIDs');
+    }
+  }
+
+  /**
+   * Mark participant as left by LiveKit participant SID (TRANSACTION-SAFE)
+   * Uses LiveKit's unique participant session ID to target the exact participant
+   * @param livekitParticipantSid - LiveKit's unique participant session ID
+   * @returns true if participant was updated, false if already LEFT or not found
+   */
+  async markParticipantAsLeftBySid(
+    livekitParticipantSid: string
+  ): Promise<boolean> {
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Find the participant by LiveKit SID
+        const participant = await tx.participant.findUnique({
+          where: { livekitParticipantSid },
+        });
+
+        // If not found or already LEFT, return false (idempotent)
+        if (!participant || participant.status === 'LEFT') {
+          return false;
+        }
+
+        // Update to LEFT status
+        await tx.participant.update({
+          where: { id: participant.id },
+          data: {
+            status: 'LEFT',
+            leftAt: new Date(),
+          },
+        });
+
+        return true;
+      });
+
+      return result;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          // Participant not found
+          return false;
+        }
+      }
+      throw new DatabaseError('Failed to update participant status');
+    }
+  }
+
+  /**
+   * Mark participant as left by userId and livestreamId (LEGACY - for backwards compatibility)
+   * WARNING: This method can have race conditions if same user joins multiple times
+   * Prefer using markParticipantAsLeftBySid() when LiveKit SID is available
+   * @deprecated Use markParticipantAsLeftBySid() instead
+   * @returns Number of participants updated (0 if already LEFT, making this idempotent)
    */
   async markParticipantAsLeft(
     userId: string,
@@ -284,6 +375,71 @@ class DatabaseService {
       return result.count;
     } catch (error) {
       throw new DatabaseError('Failed to update participant status');
+    }
+  }
+
+  /**
+   * Check if webhook has been processed (for deduplication)
+   * @param webhookId - Unique webhook ID from LiveKit
+   * @returns true if webhook was already processed, false otherwise
+   */
+  async checkWebhookProcessed(webhookId: string): Promise<boolean> {
+    try {
+      const existing = await this.prisma.webhookEvent.findUnique({
+        where: { id: webhookId },
+      });
+      return existing !== null;
+    } catch (error) {
+      throw new DatabaseError('Failed to check webhook deduplication');
+    }
+  }
+
+  /**
+   * Record webhook as processed (for deduplication)
+   * @param webhookId - Unique webhook ID from LiveKit
+   * @param event - Event type (participant_joined, participant_left, etc.)
+   */
+  async recordWebhookProcessed(webhookId: string, event: string): Promise<void> {
+    try {
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24); // 24-hour TTL
+
+      await this.prisma.webhookEvent.create({
+        data: {
+          id: webhookId,
+          event,
+          expiresAt,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          // Duplicate webhook ID - this is expected in race conditions
+          console.log(`[Database] Webhook ${webhookId} already recorded (race condition)`);
+          return;
+        }
+      }
+      throw new DatabaseError('Failed to record webhook');
+    }
+  }
+
+  /**
+   * Clean up old webhook records (older than 24 hours)
+   * Should be called periodically to prevent unbounded table growth
+   * @returns Number of records deleted
+   */
+  async cleanupOldWebhooks(): Promise<number> {
+    try {
+      const result = await this.prisma.webhookEvent.deleteMany({
+        where: {
+          expiresAt: {
+            lt: new Date(), // Less than current time = expired
+          },
+        },
+      });
+      return result.count;
+    } catch (error) {
+      throw new DatabaseError('Failed to cleanup old webhooks');
     }
   }
 

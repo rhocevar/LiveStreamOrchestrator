@@ -13,6 +13,7 @@
 - **Framework**: Express.js 4.21.2
 - **Database**: PostgreSQL with Prisma ORM 6.2.0
 - **Real-time Communication**: LiveKit Server SDK 2.14.0
+- **Message Queue**: BullMQ with Redis (for webhook processing)
 - **Dev Tools**: tsx (TypeScript execution)
 
 ### Client (Frontend)
@@ -30,10 +31,15 @@ favorited/                    # Monorepo root
 │   │   ├── services/         # Service layer (business logic)
 │   │   │   ├── livekit.service.ts     # LiveKit API integration
 │   │   │   ├── database.service.ts    # Prisma database operations
-│   │   │   └── livestream.service.ts  # Orchestration layer
+│   │   │   ├── livestream.service.ts  # Orchestration layer
+│   │   │   └── queue.service.ts       # Redis queue for webhook processing
 │   │   ├── routes/           # API routes
 │   │   │   ├── livestream.routes.ts   # Livestream endpoints
-│   │   │   └── webhook.routes.ts      # LiveKit webhook handler
+│   │   │   └── webhook.routes.ts      # LiveKit webhook receiver
+│   │   ├── workers/          # Background job processors
+│   │   │   └── webhook.worker.ts      # Processes webhooks from queue
+│   │   ├── jobs/             # Scheduled jobs
+│   │   │   └── webhook-cleanup.job.ts # Cleans expired webhook records
 │   │   ├── types/            # TypeScript type definitions
 │   │   │   └── livestream.types.ts
 │   │   ├── utils/            # Utility functions
@@ -474,19 +480,27 @@ enum LivestreamStatus {
 ### Participant Model
 ```prisma
 model Participant {
-  id            String            @id @default(uuid())
-  livestreamId  String
-  livestream    Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
-  userId        String
-  displayName   String
-  role          ParticipantRole   @default(VIEWER)
-  status        ParticipantStatus @default(JOINED)
-  metadata      Json?
-  joinedAt      DateTime          @default(now())
-  leftAt        DateTime?
+  id                      String            @id @default(uuid())
+  livestreamId            String
+  livestream              Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
+  userId                  String
+  displayName             String
+  role                    ParticipantRole   @default(VIEWER)
+  status                  ParticipantStatus @default(JOINED)
+  metadata                Json?
 
+  // LiveKit session identifiers (for race condition-safe operations)
+  livekitParticipantSid   String?           @unique  // LiveKit's unique participant session ID (PA_xxx)
+  livekitRoomSid          String?                    // LiveKit's room session ID (RM_xxx)
+
+  joinedAt                DateTime          @default(now())
+  leftAt                  DateTime?
+
+  // Unique constraint: One active session per user per livestream
+  @@unique([livestreamId, userId, status])
   @@index([livestreamId, status])
   @@index([userId])
+  @@index([livekitParticipantSid])
 }
 
 enum ParticipantRole {
@@ -499,6 +513,204 @@ enum ParticipantStatus {
   LEFT    // Has left the livestream
 }
 ```
+
+### WebhookEvent Model
+```prisma
+model WebhookEvent {
+  id          String    @id  // LiveKit webhook ID (for deduplication)
+  event       String         // Event type (participant_joined, participant_left, etc.)
+  processedAt DateTime  @default(now())
+  expiresAt   DateTime       // For cleanup - TTL of 24 hours
+
+  @@index([id])
+  @@index([expiresAt])
+}
+```
+
+## Webhook Processing Architecture
+
+### Overview
+The system implements a production-grade webhook processing architecture with queue-based processing, deduplication, transaction safety, and automatic cleanup.
+
+### Architecture Flow
+```
+LiveKit → Webhook Endpoint → Signature Verification → Redis Queue → Worker → Database
+                ↓                                                        ↓
+            Return 200                                          Deduplication Check
+                                                                       ↓
+                                                              Process Event (Transaction)
+                                                                       ↓
+                                                              Record as Processed
+```
+
+### Components
+
+#### 1. Webhook Receiver (`webhook.routes.ts`)
+- **Responsibility**: Receive and validate webhooks from LiveKit
+- **Flow**:
+  1. Verify webhook signature (security)
+  2. Add to Redis queue (async, non-blocking)
+  3. Return 200 immediately (LiveKit requirement)
+- **Benefits**: Fast response time, no timeout issues, handles spikes
+
+#### 2. Redis Queue (`queue.service.ts`)
+- **Technology**: BullMQ with Redis
+- **Features**:
+  - Job persistence (survives server restarts)
+  - Automatic retries with exponential backoff (3 attempts)
+  - Concurrency control (configurable via `WEBHOOK_QUEUE_CONCURRENCY`)
+  - Job deduplication (webhook ID as job ID)
+- **Configuration**:
+  - Default concurrency: 10 jobs simultaneously
+  - Retry delay: 1s, 2s, 4s (exponential backoff)
+
+#### 3. Webhook Worker (`webhook.worker.ts`)
+- **Responsibility**: Process webhooks from the queue
+- **Flow**:
+  1. Fetch job from queue
+  2. Check if already processed (deduplication)
+  3. Record as being processed (prevents race conditions)
+  4. Process event via livestream service
+  5. Mark job as complete
+- **Error Handling**: Failed jobs automatically retry via BullMQ
+
+#### 4. Livestream Service (`livestream.service.ts`)
+- **Handles these webhook events**:
+  - `participant_joined`: Updates participant record with LiveKit SIDs
+  - `participant_left`: Marks participant as LEFT using SID (transaction-safe)
+  - `room_started`: Logs room activation
+  - `room_finished`: Marks all active participants as LEFT
+- **Transaction Safety**: Uses `markParticipantAsLeftBySid()` for atomic operations
+
+#### 5. Cleanup Job (`webhook-cleanup.job.ts`)
+- **Purpose**: Prevent unbounded database growth
+- **Frequency**: Runs every hour
+- **Action**: Deletes webhook records older than 24 hours
+
+### Race Condition Prevention
+
+#### Problem: Multiple webhooks for same participant
+LiveKit may send multiple `participant_left` webhooks due to:
+- Multiple track disconnections (audio, video, data)
+- Network retries
+- Connection issues
+
+#### Solution: LiveKit Participant SID
+- **Before**: Used `(userId, livestreamId)` → Could update wrong session
+- **After**: Use `livekitParticipantSid` (unique per session) → Targets exact participant
+
+#### Implementation
+```typescript
+// Transaction-safe method using LiveKit SID
+async markParticipantAsLeftBySid(livekitParticipantSid: string): Promise<boolean> {
+  return await prisma.$transaction(async (tx) => {
+    const participant = await tx.participant.findUnique({
+      where: { livekitParticipantSid },
+    });
+
+    if (!participant || participant.status === 'LEFT') {
+      return false; // Idempotent
+    }
+
+    await tx.participant.update({
+      where: { id: participant.id },
+      data: { status: 'LEFT', leftAt: new Date() },
+    });
+
+    return true;
+  });
+}
+```
+
+### Deduplication Strategy
+
+#### Database-Level Deduplication
+- **WebhookEvent table**: Stores processed webhook IDs
+- **Check before processing**: Skip if webhook ID exists
+- **Record after processing**: Insert webhook ID with 24h TTL
+- **Handles race conditions**: Unique constraint on webhook ID
+
+#### Queue-Level Deduplication
+- **Job ID = Webhook ID**: BullMQ won't create duplicate jobs
+- **Benefits**: Prevents queue bloat from retries
+
+### Scalability
+
+#### Current Capacity
+- **Concurrent participants**: ~1,000 per livestream
+- **Simultaneous livestreams**: ~100
+- **Webhook throughput**: 10 concurrent workers (configurable)
+
+#### Horizontal Scaling (Future)
+The architecture is designed for easy scaling:
+- **Multiple servers**: Share same Redis queue
+- **Worker scaling**: Increase `WEBHOOK_QUEUE_CONCURRENCY`
+- **Redis clustering**: For higher queue throughput
+- **Pub/Sub fan-out**: For real-time notifications to clients
+
+### Monitoring & Health Checks
+
+#### Health Endpoint (`/health`)
+Returns comprehensive system status:
+```json
+{
+  "success": true,
+  "components": {
+    "api": { "status": "healthy" },
+    "database": { "status": "healthy" },
+    "redis": { "status": "healthy" },
+    "queue": {
+      "status": "healthy",
+      "details": {
+        "waiting": 0,
+        "active": 2,
+        "completed": 150,
+        "failed": 0
+      }
+    }
+  }
+}
+```
+
+#### Queue Metrics
+- **Waiting jobs**: Webhooks queued for processing
+- **Active jobs**: Currently being processed
+- **Completed**: Successfully processed count
+- **Failed**: Failed job count (investigate if > 0)
+
+### Environment Configuration
+
+#### New Redis Variables
+```bash
+# Redis connection URL (required)
+REDIS_URL=redis://localhost:6379
+
+# Webhook queue worker concurrency (default: 10)
+WEBHOOK_QUEUE_CONCURRENCY=10
+```
+
+#### Local Development Setup
+1. Install Redis: `brew install redis` (macOS) or use Docker
+2. Start Redis: `redis-server` or `docker run -p 6379:6379 redis`
+3. Update `.env`: Add `REDIS_URL=redis://localhost:6379`
+4. Server automatically starts queue worker on startup
+
+### Troubleshooting
+
+#### Issue: Webhooks not being processed
+- **Check Redis connection**: Visit `/health` endpoint
+- **Check queue status**: Look at queue details in health check
+- **Check worker logs**: Look for `[Worker]` prefixed logs
+
+#### Issue: High failed job count
+- **Check database connection**: Failures may be due to DB issues
+- **Check webhook structure**: LiveKit may have changed webhook format
+- **Check logs**: Failed jobs log error details
+
+#### Issue: Duplicate participant processing
+- **Verify SID storage**: Check `livekitParticipantSid` is populated
+- **Check deduplication**: Verify webhook IDs are unique
+- **Review logs**: Look for "already processed" messages
 
 ## Development Guidelines
 

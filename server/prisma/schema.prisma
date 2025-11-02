@@ -37,22 +37,30 @@ model Livestream {
 
 // Participant model for tracking users in livestreams
 model Participant {
-  id            String            @id @default(uuid())
-  livestreamId  String
-  livestream    Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
-  userId        String
-  displayName   String
-  role          ParticipantRole   @default(VIEWER)
-  status        ParticipantStatus @default(JOINED)
-  metadata      Json?
+  id                      String            @id @default(uuid())
+  livestreamId            String
+  livestream              Livestream        @relation(fields: [livestreamId], references: [id], onDelete: Cascade)
+  userId                  String
+  displayName             String
+  role                    ParticipantRole   @default(VIEWER)
+  status                  ParticipantStatus @default(JOINED)
+  metadata                Json?
+
+  // LiveKit session identifiers
+  livekitParticipantSid   String?           @unique  // LiveKit's unique participant session ID (PA_xxx)
+  livekitRoomSid          String?                    // LiveKit's room session ID (RM_xxx)
 
   // Timestamps
-  joinedAt      DateTime          @default(now())
-  leftAt        DateTime?
+  joinedAt                DateTime          @default(now())
+  leftAt                  DateTime?
+
+  // Unique constraint: One active session per user per livestream
+  @@unique([livestreamId, userId, status])
 
   // Composite index for efficient queries
   @@index([livestreamId, status])
   @@index([userId])
+  @@index([livekitParticipantSid])
   @@map("participants")
 }
 
@@ -74,4 +82,16 @@ enum ParticipantRole {
 enum ParticipantStatus {
   JOINED
   LEFT
+}
+
+// Webhook event tracking model for deduplication
+model WebhookEvent {
+  id          String    @id  // LiveKit webhook ID
+  event       String         // Event type (participant_joined, participant_left, etc.)
+  processedAt DateTime  @default(now())
+  expiresAt   DateTime       // For cleanup - TTL of 24 hours
+
+  @@index([id])
+  @@index([expiresAt])
+  @@map("webhook_events")
 }

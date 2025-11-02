@@ -300,52 +300,71 @@ class LivestreamService {
    * @param event Webhook event from LiveKit
    */
   async handleWebhookEvent(event: WebhookEvent): Promise<void> {
-    console.log('Received webhook event:', event.event);
+    console.log(`[Service] Processing webhook event: ${event.event}`);
 
     try {
       switch (event.event) {
         case 'participant_joined':
-          // LiveKit confirmed participant joined
-          // We already created the record when generating the token
-          console.log(
-            `Participant ${event.participant?.identity} joined room ${event.room?.name}`
-          );
-          break;
-
-        case 'participant_left':
-          // LiveKit confirmed participant left
+          // LiveKit confirmed participant joined - update participant record with LiveKit SIDs
           if (event.participant && event.room) {
             const livestream = await databaseService.getLivestreamByRoomName(
               event.room.name
             );
+
             if (livestream) {
-              const rowsAffected = await databaseService.markParticipantAsLeft(
-                event.participant.identity,
-                livestream.id
+              const updated = await databaseService.updateParticipantWithLiveKitSids(
+                event.participant.identity, // userId
+                livestream.id,
+                event.participant.sid, // LiveKit participant SID
+                event.room.sid // LiveKit room SID
               );
-              if (rowsAffected > 0) {
+
+              if (updated) {
                 console.log(
-                  `Participant ${event.participant.identity} left room ${event.room.name}`
+                  `[Service] Participant ${event.participant.identity} joined room ${event.room.name} (SID: ${event.participant.sid})`
                 );
               } else {
-                console.log(
-                  `Participant ${event.participant.identity} already marked as left (duplicate webhook)`
+                console.warn(
+                  `[Service] Could not find participant record for ${event.participant.identity} in ${event.room.name}`
                 );
               }
             } else {
               console.warn(
-                `Received participant_left for unknown room: ${event.room.name}`
+                `[Service] Received participant_joined for unknown room: ${event.room.name}`
               );
             }
           } else {
             console.warn(
-              `Received participant_left webhook with missing data - participant: ${!!event.participant}, room: ${!!event.room}`
+              `[Service] Received participant_joined webhook with missing data`
+            );
+          }
+          break;
+
+        case 'participant_left':
+          // LiveKit confirmed participant left - use SID-based method (TRANSACTION-SAFE)
+          if (event.participant) {
+            const updated = await databaseService.markParticipantAsLeftBySid(
+              event.participant.sid
+            );
+
+            if (updated) {
+              console.log(
+                `[Service] Participant ${event.participant.identity} left room (SID: ${event.participant.sid})`
+              );
+            } else {
+              console.log(
+                `[Service] Participant ${event.participant.identity} already marked as left or not found (SID: ${event.participant.sid})`
+              );
+            }
+          } else {
+            console.warn(
+              `[Service] Received participant_left webhook with missing participant data`
             );
           }
           break;
 
         case 'room_started':
-          console.log(`Room ${event.room?.name} started`);
+          console.log(`[Service] Room ${event.room?.name} started`);
           break;
 
         case 'room_finished':
@@ -354,35 +373,46 @@ class LivestreamService {
             const livestream = await databaseService.getLivestreamByRoomName(
               event.room.name
             );
+
             if (livestream) {
               const activeParticipants = await databaseService.listParticipants({
                 livestreamId: livestream.id,
                 status: 'JOINED',
               });
 
-              // Mark all active participants as left
+              // Mark all active participants as left using SID-based method
               let updatedCount = 0;
               for (const participant of activeParticipants) {
-                const rowsAffected = await databaseService.markParticipantAsLeft(
-                  participant.userId,
-                  livestream.id
-                );
-                updatedCount += rowsAffected;
+                // Use SID if available, otherwise fall back to userId (for backwards compatibility)
+                if (participant.livekitParticipantSid) {
+                  const updated = await databaseService.markParticipantAsLeftBySid(
+                    participant.livekitParticipantSid
+                  );
+                  if (updated) updatedCount++;
+                } else {
+                  // Fallback for participants without SID (shouldn't happen in normal flow)
+                  const rowsAffected = await databaseService.markParticipantAsLeft(
+                    participant.userId,
+                    livestream.id
+                  );
+                  updatedCount += rowsAffected;
+                }
               }
 
               console.log(
-                `Room ${event.room.name} finished, marked ${updatedCount} participants as left`
+                `[Service] Room ${event.room.name} finished, marked ${updatedCount} participants as left`
               );
             }
           }
           break;
 
         default:
-          console.log(`Unhandled webhook event: ${event.event}`);
+          console.log(`[Service] Unhandled webhook event: ${event.event}`);
       }
     } catch (error) {
-      console.error('Error handling webhook event:', error);
-      // Don't throw - we don't want to fail webhook processing
+      console.error('[Service] Error handling webhook event:', error);
+      // Throw error so worker can retry
+      throw error;
     }
   }
 
@@ -436,6 +466,8 @@ class LivestreamService {
       role: participant.role,
       status: participant.status,
       metadata: participant.metadata as Record<string, unknown> | null,
+      livekitParticipantSid: participant.livekitParticipantSid,
+      livekitRoomSid: participant.livekitRoomSid,
       joinedAt: participant.joinedAt,
       leftAt: participant.leftAt,
     };

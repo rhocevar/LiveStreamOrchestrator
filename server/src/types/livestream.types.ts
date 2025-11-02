@@ -106,6 +106,8 @@ export interface ParticipantResponse {
   role: ParticipantRole;
   status: ParticipantStatus;
   metadata: Record<string, unknown> | null;
+  livekitParticipantSid: string | null;
+  livekitRoomSid: string | null;
   joinedAt: Date;
   leftAt: Date | null;
 }
@@ -114,6 +116,7 @@ export interface ParticipantResponse {
  * LiveKit webhook event types
  */
 export interface WebhookEvent {
+  id: string; // Unique webhook ID from LiveKit (for deduplication)
   event: string;
   room?: {
     sid: string;
@@ -125,4 +128,12 @@ export interface WebhookEvent {
     name: string;
   };
   createdAt: number;
+}
+
+/**
+ * Webhook deduplication check result
+ */
+export interface WebhookDeduplicationResult {
+  isDuplicate: boolean;
+  previouslyProcessedAt?: Date;
 }

@@ -9,6 +9,9 @@ import cors from 'cors';
 import livestreamRoutes from './routes/livestream.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
 import { databaseService } from './services/database.service.js';
+import { queueService } from './services/queue.service.js';
+import { startWebhookWorker, stopWebhookWorker } from './workers/webhook.worker.js';
+import { startCleanupJob, stopCleanupJob } from './jobs/webhook-cleanup.job.js';
 import { AppError } from './utils/errors.js';
 import type { ErrorResponse } from './types/livestream.types.js';
 
@@ -45,12 +48,61 @@ if (process.env.NODE_ENV === 'development') {
 // ===========================================
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    message: 'Livestream Orchestrator API is running',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    // Check Redis connection
+    const redisConnected = await queueService.isRedisConnected();
+
+    // Get queue health status
+    const queueHealth = await queueService.getHealthStatus();
+
+    // Overall health status
+    const isHealthy = redisConnected && queueHealth.isHealthy;
+
+    res.status(isHealthy ? 200 : 503).json({
+      success: isHealthy,
+      message: isHealthy
+        ? 'Livestream Orchestrator API is running'
+        : 'Service degraded - check component status',
+      timestamp: new Date().toISOString(),
+      components: {
+        api: {
+          status: 'healthy',
+          message: 'Express server is running',
+        },
+        database: {
+          status: 'healthy',
+          message: 'PostgreSQL connection active',
+        },
+        redis: {
+          status: redisConnected ? 'healthy' : 'unhealthy',
+          message: redisConnected
+            ? 'Redis connection active'
+            : 'Redis connection failed',
+        },
+        queue: {
+          status: queueHealth.isHealthy ? 'healthy' : 'unhealthy',
+          message: queueHealth.isHealthy
+            ? 'Webhook queue operational'
+            : 'Webhook queue unavailable',
+          details: queueHealth.isHealthy ? {
+            waiting: queueHealth.waiting,
+            active: queueHealth.active,
+            completed: queueHealth.completed,
+            failed: queueHealth.failed,
+          } : undefined,
+        },
+      },
+    });
+  } catch (error) {
+    // Health check should not crash the server
+    console.error('Health check error:', error);
+    res.status(503).json({
+      success: false,
+      message: 'Health check failed',
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 // API v1 routes
@@ -113,6 +165,14 @@ async function startServer() {
     await databaseService.connect();
     console.log('✓ Database connected successfully');
 
+    // Start webhook worker (for processing LiveKit webhooks from queue)
+    startWebhookWorker();
+    console.log('✓ Webhook worker started');
+
+    // Start webhook cleanup job (removes expired webhook records)
+    startCleanupJob();
+    console.log('✓ Webhook cleanup job started');
+
     // Start Express server
     app.listen(PORT, () => {
       console.log('===========================================');
@@ -122,6 +182,9 @@ async function startServer() {
       console.log(`Server running on: http://localhost:${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`API Base URL: http://localhost:${PORT}/api/v1`);
+      console.log('===========================================');
+      console.log('Redis URL:', process.env.REDIS_URL || 'redis://localhost:6379');
+      console.log('Webhook queue concurrency:', process.env.WEBHOOK_QUEUE_CONCURRENCY || '10');
       console.log('===========================================');
     });
   } catch (error) {
@@ -135,8 +198,19 @@ async function shutdown() {
   console.log('\nShutting down gracefully...');
 
   try {
+    // Stop cleanup job first
+    stopCleanupJob();
+    console.log('✓ Webhook cleanup job stopped');
+
+    // Stop webhook worker (wait for in-flight jobs to complete)
+    await stopWebhookWorker();
+    console.log('✓ Webhook worker stopped');
+
+    // Disconnect from database
     await databaseService.disconnect();
     console.log('✓ Database disconnected');
+
+    console.log('Shutdown complete');
     process.exit(0);
   } catch (error) {
     console.error('Error during shutdown:', error);

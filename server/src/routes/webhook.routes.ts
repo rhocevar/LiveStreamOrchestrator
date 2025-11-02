@@ -1,11 +1,17 @@
 /**
  * Webhook API Routes
  * Handles webhooks from external services like LiveKit
+ *
+ * Architecture:
+ * 1. Verify webhook signature
+ * 2. Add to Redis queue for async processing
+ * 3. Return 200 immediately
+ * 4. Worker processes webhook from queue
  */
 
 import { Router, Request, Response } from 'express';
 import { livekitService } from '../services/livekit.service.js';
-import { livestreamService } from '../services/livestream.service.js';
+import { queueService } from '../services/queue.service.js';
 
 const router = Router();
 
@@ -23,12 +29,18 @@ const router = Router();
  * - room_finished: Room was closed
  *
  * IMPORTANT: Raw body parsing is handled at the app level (index.ts) for all /api/v1/webhooks routes
+ *
+ * Flow:
+ * 1. Signature verification (security)
+ * 2. Add to queue (asynchronous, non-blocking)
+ * 3. Return 200 immediately (LiveKit requirement)
+ * 4. Worker processes webhook from queue with deduplication and transaction safety
  */
 router.post('/livekit', async (req: Request, res: Response) => {
     try {
       // Ensure we have a Buffer body
       if (!Buffer.isBuffer(req.body)) {
-        console.error('Webhook body is not a Buffer:', typeof req.body);
+        console.error('[Webhook] Body is not a Buffer:', typeof req.body);
         res.status(400).json({
           success: false,
           error: 'BadRequest',
@@ -41,12 +53,12 @@ router.post('/livekit', async (req: Request, res: Response) => {
       const rawBody = req.body.toString('utf-8');
       const authHeader = req.headers.authorization || '';
 
-      // Verify webhook signature
+      // Verify webhook signature (CRITICAL: Do this before queueing)
       const event = livekitService.verifyWebhook(rawBody, authHeader);
 
       if (!event) {
-        // Invalid signature
-        console.warn('Received webhook with invalid signature');
+        // Invalid signature - reject immediately
+        console.warn('[Webhook] Received webhook with invalid signature');
         res.status(401).json({
           success: false,
           error: 'Unauthorized',
@@ -55,19 +67,27 @@ router.post('/livekit', async (req: Request, res: Response) => {
         return;
       }
 
-      // Process the webhook event
-      await livestreamService.handleWebhookEvent(event);
+      // Webhook is valid - add to queue for processing
+      console.log(`[Webhook] Received ${event.event} event (webhook ID: ${event.id})`);
+
+      await queueService.addWebhookJob({
+        webhookId: event.id,
+        event: event.event,
+        payload: event,
+        receivedAt: new Date().toISOString(),
+      });
 
       // Respond immediately to LiveKit (they expect a 200 response)
+      // Processing will happen asynchronously via the queue worker
       res.status(200).json({
         success: true,
-        message: 'Webhook processed',
+        message: 'Webhook queued for processing',
       });
     } catch (error) {
-      console.error('Error processing webhook:', error);
+      console.error('[Webhook] Error handling webhook:', error);
 
       // Still return 200 to prevent LiveKit from retrying
-      // We've already logged the error for investigation
+      // Worker will handle failed jobs with exponential backoff
       res.status(200).json({
         success: true,
         message: 'Webhook received',
