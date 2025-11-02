@@ -350,35 +350,6 @@ class DatabaseService {
   }
 
   /**
-   * Mark participant as left by userId and livestreamId (LEGACY - for backwards compatibility)
-   * WARNING: This method can have race conditions if same user joins multiple times
-   * Prefer using markParticipantAsLeftBySid() when LiveKit SID is available
-   * @deprecated Use markParticipantAsLeftBySid() instead
-   * @returns Number of participants updated (0 if already LEFT, making this idempotent)
-   */
-  async markParticipantAsLeft(
-    userId: string,
-    livestreamId: string
-  ): Promise<number> {
-    try {
-      const result = await this.prisma.participant.updateMany({
-        where: {
-          userId,
-          livestreamId,
-          status: 'JOINED',
-        },
-        data: {
-          status: 'LEFT',
-          leftAt: new Date(),
-        },
-      });
-      return result.count;
-    } catch (error) {
-      throw new DatabaseError('Failed to update participant status');
-    }
-  }
-
-  /**
    * Check if webhook has been processed (for deduplication)
    * @param webhookId - Unique webhook ID from LiveKit
    * @returns true if webhook was already processed, false otherwise

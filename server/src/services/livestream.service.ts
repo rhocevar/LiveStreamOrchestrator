@@ -286,8 +286,35 @@ class LivestreamService {
     // Verify livestream exists
     await databaseService.getLivestreamById(livestreamId);
 
-    // Mark participant as left
-    await databaseService.markParticipantAsLeft(data.userId, livestreamId);
+    // Get active participant to retrieve LiveKit SID
+    const participant = await databaseService.getActiveParticipant(
+      data.userId,
+      livestreamId
+    );
+
+    if (!participant) {
+      // Already left or never joined - idempotent operation
+      console.log(
+        `[Service] Participant ${data.userId} not found or already left`
+      );
+      return;
+    }
+
+    // Use SID-based method for transaction safety
+    if (participant.livekitParticipantSid) {
+      await databaseService.markParticipantAsLeftBySid(
+        participant.livekitParticipantSid
+      );
+    } else {
+      // This shouldn't happen in normal flow, but log warning
+      console.warn(
+        `[Service] Participant ${data.userId} has no LiveKit SID - cannot mark as left safely`
+      );
+      throw new ValidationError('Participant missing LiveKit SID');
+    }
+
+    // Update stream state
+    await stateService.handleParticipantLeft(livestreamId, data.userId);
   }
 
   /**
@@ -429,19 +456,16 @@ class LivestreamService {
               // Mark all active participants as left using SID-based method
               let updatedCount = 0;
               for (const participant of activeParticipants) {
-                // Use SID if available, otherwise fall back to userId (for backwards compatibility)
                 if (participant.livekitParticipantSid) {
                   const updated = await databaseService.markParticipantAsLeftBySid(
                     participant.livekitParticipantSid
                   );
                   if (updated) updatedCount++;
                 } else {
-                  // Fallback for participants without SID (shouldn't happen in normal flow)
-                  const rowsAffected = await databaseService.markParticipantAsLeft(
-                    participant.userId,
-                    livestream.id
+                  // This shouldn't happen - log warning
+                  console.warn(
+                    `[Service] Participant ${participant.userId} has no LiveKit SID (room: ${event.room.name})`
                   );
-                  updatedCount += rowsAffected;
                 }
               }
 
