@@ -34,6 +34,7 @@ class StateService {
   private redisSubClient: Redis;
   private sseConnections: Map<string, SSEConnection[]> = new Map();
   private viewerCountThrottles: Map<string, ViewerCountThrottle> = new Map();
+  private subscribedChannels: Set<string> = new Set(); // Track Redis Pub/Sub subscriptions
 
   // Configuration
   private readonly STATE_TTL = 24 * 60 * 60; // 24 hours in seconds
@@ -61,7 +62,45 @@ class StateService {
       enableReadyCheck: false,
     });
 
+    // Set up global message handler (single handler for all channels)
+    this.redisSubClient.on('message', (channel, message) => {
+      this.handleRedisMessage(channel, message);
+    });
+
     console.log('[State Service] Initialized Redis connections');
+  }
+
+  /**
+   * Global message handler for all Redis Pub/Sub channels
+   * Routes messages to appropriate SSE clients based on channel name
+   */
+  private handleRedisMessage(channel: string, message: string): void {
+    try {
+      // Extract livestreamId from channel name (format: stream:events:{livestreamId})
+      const livestreamId = this.extractLivestreamIdFromChannel(channel);
+      if (!livestreamId) {
+        console.warn(`[State Service] Invalid channel format: ${channel}`);
+        return;
+      }
+
+      // Parse and broadcast event
+      const event: StreamStateEvent = JSON.parse(message);
+      this.broadcastToSSEClients(livestreamId, event);
+    } catch (error) {
+      console.error('[State Service] Error handling Redis message:', error);
+    }
+  }
+
+  /**
+   * Extract livestreamId from Redis channel name
+   * Channel format: stream:events:{livestreamId}
+   */
+  private extractLivestreamIdFromChannel(channel: string): string | null {
+    const prefix = 'stream:events:';
+    if (!channel.startsWith(prefix)) {
+      return null;
+    }
+    return channel.substring(prefix.length);
   }
 
   /**
@@ -346,23 +385,22 @@ class StateService {
 
   /**
    * Subscribe to Redis Pub/Sub channel for a livestream
+   * Only subscribes if not already subscribed (prevents duplicate handlers)
    */
   private async subscribeToRedisChannel(livestreamId: string): Promise<void> {
     const channel = this.getPubSubChannel(livestreamId);
 
-    // Set up message handler for this channel
-    this.redisSubClient.on('message', (ch, message) => {
-      if (ch === channel) {
-        try {
-          const event: StreamStateEvent = JSON.parse(message);
-          this.broadcastToSSEClients(livestreamId, event);
-        } catch (error) {
-          console.error('[State Service] Error parsing Redis message:', error);
-        }
-      }
-    });
+    // Check if already subscribed
+    if (this.subscribedChannels.has(channel)) {
+      console.log(
+        `[State Service] Already subscribed to channel: ${channel}`
+      );
+      return;
+    }
 
+    // Subscribe to channel
     await this.redisSubClient.subscribe(channel);
+    this.subscribedChannels.add(channel);
     console.log(`[State Service] Subscribed to Redis channel: ${channel}`);
   }
 
@@ -457,8 +495,13 @@ class StateService {
     livestreamId: string
   ): Promise<void> {
     const channel = this.getPubSubChannel(livestreamId);
-    await this.redisSubClient.unsubscribe(channel);
-    console.log(`[State Service] Unsubscribed from Redis channel: ${channel}`);
+
+    // Only unsubscribe if currently subscribed
+    if (this.subscribedChannels.has(channel)) {
+      await this.redisSubClient.unsubscribe(channel);
+      this.subscribedChannels.delete(channel);
+      console.log(`[State Service] Unsubscribed from Redis channel: ${channel}`);
+    }
   }
 
   /**
@@ -516,6 +559,12 @@ class StateService {
     for (const [livestreamId] of this.sseConnections) {
       this.closeConnectionsForStream(livestreamId);
     }
+
+    // Clear subscribed channels tracking
+    this.subscribedChannels.clear();
+
+    // Remove global message handler
+    this.redisSubClient.removeAllListeners('message');
 
     // Close Redis connections
     await this.redisClient.quit();
