@@ -24,14 +24,12 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 
 // Body parsing middleware
-// Skip JSON parsing for webhook routes (they need raw body for signature verification)
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/v1/webhooks')) {
-    next();
-  } else {
-    express.json()(req, res, next);
-  }
-});
+// IMPORTANT: Raw body parser for webhooks must come BEFORE JSON/urlencoded parsers
+// LiveKit sends webhooks with 'application/webhook+json' content type
+app.use('/api/v1/webhooks', express.raw({
+  type: ['application/json', 'application/webhook+json']
+}));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware (development only)

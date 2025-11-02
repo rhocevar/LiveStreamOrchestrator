@@ -263,13 +263,14 @@ class DatabaseService {
 
   /**
    * Mark participant as left by userId and livestreamId
+   * Returns the number of participants updated (0 if already LEFT, making this idempotent)
    */
   async markParticipantAsLeft(
     userId: string,
     livestreamId: string
-  ): Promise<void> {
+  ): Promise<number> {
     try {
-      await this.prisma.participant.updateMany({
+      const result = await this.prisma.participant.updateMany({
         where: {
           userId,
           livestreamId,
@@ -280,6 +281,7 @@ class DatabaseService {
           leftAt: new Date(),
         },
       });
+      return result.count;
     } catch (error) {
       throw new DatabaseError('Failed to update participant status');
     }

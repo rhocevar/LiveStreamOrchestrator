@@ -4,7 +4,6 @@
  */
 
 import { Router, Request, Response } from 'express';
-import express from 'express';
 import { livekitService } from '../services/livekit.service.js';
 import { livestreamService } from '../services/livestream.service.js';
 
@@ -23,12 +22,9 @@ const router = Router();
  * - room_started: Room became active
  * - room_finished: Room was closed
  *
- * IMPORTANT: We use express.raw() middleware to capture the raw body for signature verification
+ * IMPORTANT: Raw body parsing is handled at the app level (index.ts) for all /api/v1/webhooks routes
  */
-router.post(
-  '/livekit',
-  express.raw({ type: 'application/json' }),
-  async (req: Request, res: Response) => {
+router.post('/livekit', async (req: Request, res: Response) => {
     try {
       // Ensure we have a Buffer body
       if (!Buffer.isBuffer(req.body)) {

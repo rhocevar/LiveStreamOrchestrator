@@ -159,8 +159,23 @@ class LiveKitService {
    */
   verifyWebhook(body: string, authHeader: string): any {
     try {
-      return this.webhookReceiver.receive(body, authHeader);
+      // Verify the webhook signature
+      const verified = this.webhookReceiver.receive(body, authHeader);
+
+      // If verification succeeded, parse the body as JSON
+      // The receive() method validates the signature but may not return the parsed body
+      if (verified !== null && verified !== undefined) {
+        // If receive() returned the parsed event, use it
+        if (typeof verified === 'object' && Object.keys(verified).length > 0) {
+          return verified;
+        }
+        // Otherwise, parse the body ourselves
+        return JSON.parse(body);
+      }
+
+      return null;
     } catch (error) {
+      console.error('Webhook verification error:', error);
       // Invalid signature or malformed webhook
       return null;
     }

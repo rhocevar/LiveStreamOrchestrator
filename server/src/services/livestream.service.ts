@@ -319,14 +319,28 @@ class LivestreamService {
               event.room.name
             );
             if (livestream) {
-              await databaseService.markParticipantAsLeft(
+              const rowsAffected = await databaseService.markParticipantAsLeft(
                 event.participant.identity,
                 livestream.id
               );
-              console.log(
-                `Participant ${event.participant.identity} left room ${event.room.name}`
+              if (rowsAffected > 0) {
+                console.log(
+                  `Participant ${event.participant.identity} left room ${event.room.name}`
+                );
+              } else {
+                console.log(
+                  `Participant ${event.participant.identity} already marked as left (duplicate webhook)`
+                );
+              }
+            } else {
+              console.warn(
+                `Received participant_left for unknown room: ${event.room.name}`
               );
             }
+          } else {
+            console.warn(
+              `Received participant_left webhook with missing data - participant: ${!!event.participant}, room: ${!!event.room}`
+            );
           }
           break;
 
@@ -347,15 +361,17 @@ class LivestreamService {
               });
 
               // Mark all active participants as left
+              let updatedCount = 0;
               for (const participant of activeParticipants) {
-                await databaseService.markParticipantAsLeft(
+                const rowsAffected = await databaseService.markParticipantAsLeft(
                   participant.userId,
                   livestream.id
                 );
+                updatedCount += rowsAffected;
               }
 
               console.log(
-                `Room ${event.room.name} finished, marked ${activeParticipants.length} participants as left`
+                `Room ${event.room.name} finished, marked ${updatedCount} participants as left`
               );
             }
           }
