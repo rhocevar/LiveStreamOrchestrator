@@ -1,0 +1,158 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: favorited-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: favorited
+      POSTGRES_PASSWORD: favorited
+      POSTGRES_DB: favorited
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - favorited-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U favorited"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for BullMQ
+  redis:
+    image: redis:7-alpine
+    container_name: favorited-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - favorited-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: production
+    container_name: favorited-server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://favorited:favorited@postgres:5432/favorited?schema=public
+      REDIS_URL: redis://redis:6379
+      LIVEKIT_URL: ${LIVEKIT_URL}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      TOKEN_EXPIRATION_HOURS: ${TOKEN_EXPIRATION_HOURS:-24}
+      WEBHOOK_QUEUE_CONCURRENCY: ${WEBHOOK_QUEUE_CONCURRENCY:-10}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - favorited-network
+    volumes:
+      - ./server/prisma:/app/prisma
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    profiles:
+      - prod
+
+  # Frontend Client
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: production
+    container_name: favorited-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - favorited-network
+    environment:
+      VITE_API_URL: http://localhost:3001/api/v1
+    profiles:
+      - prod
+
+  # Development services (optional)
+  server-dev:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: development
+    container_name: favorited-server-dev
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://favorited:favorited@postgres:5432/favorited?schema=public
+      REDIS_URL: redis://redis:6379
+      LIVEKIT_URL: ${LIVEKIT_URL}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      TOKEN_EXPIRATION_HOURS: ${TOKEN_EXPIRATION_HOURS:-24}
+      WEBHOOK_QUEUE_CONCURRENCY: ${WEBHOOK_QUEUE_CONCURRENCY:-10}
+    ports:
+      - "3001:3001"
+      - "9229:9229"  # Debug port for remote debugging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - favorited-network
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+      - /app/dist
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev:debug"
+    profiles:
+      - dev
+
+  client-dev:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: development
+    container_name: favorited-client-dev
+    environment:
+      VITE_API_URL: http://localhost:3001/api/v1
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server-dev
+    networks:
+      - favorited-network
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    profiles:
+      - dev
+
+networks:
+  favorited-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

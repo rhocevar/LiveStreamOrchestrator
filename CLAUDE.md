@@ -9,7 +9,7 @@
 ## Tech Stack
 
 ### Server (API)
-- **Runtime**: Node.js with TypeScript 5.9.3
+- **Runtime**: Node.js 20+ with TypeScript 5.9.3
 - **Framework**: Express.js 4.21.2
 - **Database**: PostgreSQL with Prisma ORM 6.2.0
 - **Real-time Communication**: LiveKit Server SDK 2.14.0
@@ -448,6 +448,385 @@ LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 ```
 
+## Docker Setup
+
+### Prerequisites
+- Docker (20.10+) and Docker Compose (2.0+)
+- LiveKit credentials (from [cloud.livekit.io](https://cloud.livekit.io))
+
+### Quick Start with Docker
+
+#### 1. Configure Environment Variables
+Copy the Docker environment example file and configure LiveKit credentials:
+```bash
+cp .env.docker.example .env
+```
+
+Edit `.env` and add your LiveKit credentials:
+```bash
+LIVEKIT_URL=https://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+TOKEN_EXPIRATION_HOURS=24
+WEBHOOK_QUEUE_CONCURRENCY=10
+```
+
+#### 2. Run in Production Mode
+Start all services (PostgreSQL, Redis, Server, Client):
+```bash
+docker-compose --profile prod up -d
+```
+
+This will:
+- Start PostgreSQL database on port 5432
+- Start Redis on port 6379
+- Start server API on port 3001
+- Start client on port 80 (served by nginx)
+- Automatically run database migrations
+
+Access the application:
+- **Client**: http://localhost
+- **API**: http://localhost:3001/api/v1
+- **Health Check**: http://localhost:3001/health
+
+#### 3. Run in Development Mode
+For development with hot reload:
+```bash
+docker-compose --profile dev up
+```
+
+This starts development versions with:
+- Server with hot reload (tsx) on port 3001
+- Client with Vite dev server on port 5173
+- Volume mounts for live code changes
+
+Access the development servers:
+- **Client Dev**: http://localhost:5173
+- **API Dev**: http://localhost:3001/api/v1
+
+#### 4. Debugging with VS Code/Cursor
+
+The development server includes remote debugging support on port 9229.
+
+**Setup:**
+1. Start the development server:
+   ```bash
+   docker-compose --profile dev up
+   ```
+
+2. In VS Code/Cursor, open the Debug panel (Ctrl+Shift+D / Cmd+Shift+D)
+
+3. Select "Attach to Docker Server" from the dropdown
+
+4. Click the green play button or press F5
+
+**Features:**
+- **Breakpoints**: Set breakpoints in your TypeScript source files
+- **Hot Reload**: Code changes trigger automatic restart with debugger reattachment
+- **Source Maps**: Full TypeScript debugging support with source maps
+- **Variables**: Inspect variables, call stack, and watch expressions
+- **Console**: View logs and evaluate expressions in debug console
+
+**Debugging Configuration** (`.vscode/launch.json`):
+```json
+{
+  "name": "Attach to Docker Server",
+  "type": "node",
+  "request": "attach",
+  "address": "localhost",
+  "port": 9229,
+  "restart": true,
+  "localRoot": "${workspaceFolder}/server",
+  "remoteRoot": "/app"
+}
+```
+
+**Troubleshooting:**
+- If debugger won't attach, ensure the server is running: `docker-compose logs server-dev`
+- Check port 9229 is mapped: `docker-compose ps server-dev`
+- Restart container if needed: `docker-compose restart server-dev`
+
+### Docker Architecture
+
+#### Services Overview
+
+```
+┌─────────────────────────────────────────────┐
+│           Docker Compose Stack              │
+├─────────────────────────────────────────────┤
+│                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │PostgreSQL│  │  Redis   │  │  Server  │ │
+│  │  :5432   │  │  :6379   │  │  :3001   │ │
+│  └──────────┘  └──────────┘  └──────────┘ │
+│       │             │             │        │
+│       └─────────────┴─────────────┘        │
+│                     │                      │
+│              ┌──────────┐                  │
+│              │  Client  │                  │
+│              │   :80    │                  │
+│              └──────────┘                  │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+#### Container Details
+
+**postgres** (postgres:15-alpine)
+- Database for application data
+- Persistent volume: `postgres_data`
+- Health check: `pg_isready`
+- Auto-configured with credentials
+
+**redis** (redis:7-alpine)
+- Message queue for webhook processing
+- Persistent volume: `redis_data`
+- Append-only mode enabled
+- Health check: `redis-cli ping`
+
+**server** (Node.js 20-alpine)
+- Express API with LiveKit integration
+- Multi-stage build (development/production)
+- Auto-runs Prisma migrations on startup
+- Health check: `/health` endpoint
+- Non-root user for security
+
+**client** (nginx:alpine in production)
+- React frontend served by nginx
+- Multi-stage build with Vite
+- Gzip compression enabled
+- SPA routing with fallback to index.html
+- Health check: nginx status
+
+### Docker Commands
+
+#### Managing Services
+```bash
+# Start all services (production)
+docker-compose up -d
+
+# Start with development profile
+docker-compose --profile dev up
+
+# Stop all services
+docker-compose down
+
+# Stop and remove volumes (deletes data!)
+docker-compose down -v
+
+# View logs
+docker-compose logs -f
+
+# View logs for specific service
+docker-compose logs -f server
+
+# Restart a service
+docker-compose restart server
+
+# Rebuild containers after code changes
+docker-compose up -d --build
+```
+
+#### Database Operations
+```bash
+# Run Prisma migrations
+docker-compose exec server npx prisma migrate deploy
+
+# Generate Prisma client
+docker-compose exec server npx prisma generate
+
+# Access Prisma Studio
+docker-compose exec server npx prisma studio
+
+# Connect to PostgreSQL directly
+docker-compose exec postgres psql -U favorited -d favorited
+```
+
+#### Redis Operations
+```bash
+# Access Redis CLI
+docker-compose exec redis redis-cli
+
+# Check queue status
+docker-compose exec redis redis-cli KEYS "bull:*"
+
+# Monitor Redis commands
+docker-compose exec redis redis-cli MONITOR
+```
+
+#### Health Checks
+```bash
+# Check all services health
+docker-compose ps
+
+# Check API health
+curl http://localhost:3001/health
+
+# Check specific service logs
+docker-compose logs --tail=100 server
+```
+
+### Docker Files Structure
+
+```
+favorited/
+├── docker-compose.yml           # Service orchestration
+├── .env                         # Environment variables (don't commit)
+├── .env.docker.example          # Environment template
+├── server/
+│   ├── Dockerfile              # Server multi-stage build
+│   └── .dockerignore           # Excludes for server build
+└── client/
+    ├── Dockerfile              # Client multi-stage build
+    ├── nginx.conf              # Nginx configuration
+    └── .dockerignore           # Excludes for client build
+```
+
+### Multi-Stage Builds
+
+Both Dockerfiles use multi-stage builds for optimization:
+
+**Development Stage**
+- Full Node.js with all dependencies
+- Volume mounts for live code changes
+- Hot reload enabled
+
+**Production Stage**
+- Minimal production dependencies
+- Optimized layer caching
+- Non-root user
+- Health checks
+- Security headers (client)
+
+### Volume Persistence
+
+Docker volumes persist data across container restarts:
+
+- `postgres_data`: Database files
+- `redis_data`: Redis persistence (AOF)
+
+To backup volumes:
+```bash
+# Backup PostgreSQL
+docker-compose exec postgres pg_dump -U favorited favorited > backup.sql
+
+# Restore PostgreSQL
+docker-compose exec -T postgres psql -U favorited favorited < backup.sql
+```
+
+### Environment Variables
+
+**Required** (set in `.env`):
+- `LIVEKIT_URL`: Your LiveKit server URL
+- `LIVEKIT_API_KEY`: LiveKit API key
+- `LIVEKIT_API_SECRET`: LiveKit API secret
+
+**Optional** (with defaults):
+- `TOKEN_EXPIRATION_HOURS=24`: JWT token lifetime
+- `WEBHOOK_QUEUE_CONCURRENCY=10`: Worker concurrency
+
+**Auto-configured** (by docker-compose):
+- `DATABASE_URL`: PostgreSQL connection
+- `REDIS_URL`: Redis connection
+- `NODE_ENV`: production/development
+- `PORT`: Server port
+
+### Networking
+
+All services communicate on the `favorited-network` bridge network:
+- Services reference each other by name (e.g., `postgres:5432`)
+- Client can access server at `http://server:3001`
+- Isolated from other Docker networks
+
+### Troubleshooting Docker
+
+#### Services won't start
+```bash
+# Check logs
+docker-compose logs
+
+# Check specific service
+docker-compose logs server
+
+# Verify environment variables
+docker-compose config
+```
+
+#### Database connection issues
+```bash
+# Verify PostgreSQL is healthy
+docker-compose ps postgres
+
+# Check PostgreSQL logs
+docker-compose logs postgres
+
+# Test connection
+docker-compose exec server npx prisma db pull
+```
+
+#### Redis connection issues
+```bash
+# Verify Redis is healthy
+docker-compose ps redis
+
+# Check Redis logs
+docker-compose logs redis
+
+# Test connection
+docker-compose exec server node -e "require('ioredis').createClient(process.env.REDIS_URL).ping().then(console.log)"
+```
+
+#### Port conflicts
+If ports 80, 3001, 5432, or 6379 are in use:
+```bash
+# Find process using port
+netstat -ano | findstr :3001  # Windows
+
+# Stop conflicting service or change ports in docker-compose.yml
+```
+
+#### Out of disk space
+```bash
+# Remove unused containers, images, volumes
+docker system prune -a --volumes
+
+# Check Docker disk usage
+docker system df
+```
+
+### Production Deployment
+
+For production deployments:
+
+1. **Use docker-compose.override.yml** for environment-specific config
+2. **Enable HTTPS** with a reverse proxy (nginx, Traefik)
+3. **Use secrets management** (Docker secrets, AWS Secrets Manager)
+4. **Set up monitoring** (Prometheus, Grafana)
+5. **Configure backups** for PostgreSQL and Redis
+6. **Use orchestration** (Docker Swarm, Kubernetes) for scaling
+7. **Enable logging** (ELK stack, CloudWatch)
+
+Example production override:
+```yaml
+# docker-compose.override.yml (not committed)
+version: '3.9'
+
+services:
+  server:
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+```
+
 ## Database Schema
 
 ### Livestream Model
@@ -797,17 +1176,17 @@ HTTP Request
 - Chat functionality (real-time messaging during livestreams)
 
 ### Infrastructure
+- ✅ Docker containerization (completed)
 - Add testing (Jest, Vitest, React Testing Library)
 - Add CI/CD pipelines
 - Add monitoring and logging (Winston, Sentry)
 - Add API documentation (Swagger/OpenAPI)
 - Add rate limiting and authentication
-- Docker containerization
 
 ## Platform
 
 - **OS**: Windows (win32)
-- **Node.js**: v18+ required
+- **Node.js**: v20.19+ required (Vite 7 requirement)
 - **Package Manager**: npm
 - **Database**: PostgreSQL 14+
 

@@ -15,7 +15,7 @@ import type {
   ParticipantResponse,
   WebhookEvent
 } from '../types/livestream.types.js';
-import { ValidationError, ConflictError, AuthorizationError, NotFoundError } from '../utils/errors.js';
+import { ValidationError, ConflictError, AuthorizationError } from '../utils/errors.js';
 
 class LivestreamService {
   /**
@@ -49,7 +49,7 @@ class LivestreamService {
       createdBy: data.createdBy,
       maxParticipants: data.maxParticipants ?? 100,
       emptyTimeout: data.emptyTimeout ?? 86400,
-      metadata: data.metadata ?? undefined,
+      metadata: (data.metadata ?? undefined) as any,
       status: 'SCHEDULED',
     });
 
@@ -236,7 +236,7 @@ class LivestreamService {
       displayName: data.displayName,
       role: data.role,
       status: 'JOINED',
-      metadata: data.metadata || undefined,
+      metadata: (data.metadata || undefined) as any,
     });
 
     // Generate access token

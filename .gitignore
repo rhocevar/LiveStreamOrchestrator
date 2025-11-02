@@ -41,3 +41,7 @@ server/prisma/migrations/*
 *.njsproj
 *.sln
 *.sw?
+
+# Docker
+docker-compose.override.yml
+.docker

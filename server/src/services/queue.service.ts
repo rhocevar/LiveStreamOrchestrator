@@ -1,5 +1,5 @@
 import { Queue, Worker, QueueEvents } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 
 /**
  * Queue Service for managing webhook processing with BullMQ
@@ -20,7 +20,7 @@ export interface WebhookJob {
 }
 
 class QueueService {
-  private connection: IORedis;
+  private connection: Redis;
   private webhookQueue: Queue<WebhookJob>;
   private queueEvents: QueueEvents;
   private worker: Worker<WebhookJob> | null = null;
@@ -28,7 +28,7 @@ class QueueService {
   constructor() {
     // Initialize Redis connection
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    this.connection = new IORedis(redisUrl, {
+    this.connection = new Redis(redisUrl, {
       maxRetriesPerRequest: null, // Required for BullMQ
       enableReadyCheck: false,
     });
@@ -68,9 +68,8 @@ class QueueService {
       console.error(`[Queue] Job ${jobId} failed: ${failedReason}`);
     });
 
-    this.queueEvents.on('retrying', ({ jobId, attemptsMade }) => {
-      console.warn(`[Queue] Job ${jobId} retrying (attempt ${attemptsMade})`);
-    });
+    // Note: 'retrying' is not a standard QueueEvents event in BullMQ
+    // Retry behavior is handled automatically by the queue configuration
   }
 
   /**

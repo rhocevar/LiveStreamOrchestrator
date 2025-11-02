@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware (development only)
 if (process.env.NODE_ENV === 'development') {
-  app.use((req: Request, res: Response, next: NextFunction) => {
+  app.use((req: Request, _res: Response, next: NextFunction) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
     next();
   });
@@ -48,7 +48,7 @@ if (process.env.NODE_ENV === 'development') {
 // ===========================================
 
 // Health check endpoint
-app.get('/health', async (req: Request, res: Response) => {
+app.get('/health', async (_req: Request, res: Response) => {
   try {
     // Check Redis connection
     const redisConnected = await queueService.isRedisConnected();
@@ -122,7 +122,7 @@ app.use((req: Request, res: Response) => {
 // Error Handling Middleware
 // ===========================================
 
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   // Log error for debugging
   console.error('Error:', err);
 
@@ -149,7 +149,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     statusCode: 500,
   };
 
-  res.status(500).json({
+  return res.status(500).json({
     success: false,
     ...errorResponse,
   });

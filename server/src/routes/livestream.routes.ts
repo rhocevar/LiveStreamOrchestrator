@@ -65,6 +65,15 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        error: 'ValidationError',
+        message: 'Livestream ID is required',
+        statusCode: 400,
+      });
+      return;
+    }
     const livestream = await livestreamService.getLivestreamById(id);
 
     res.status(200).json({
@@ -95,6 +104,17 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     const { id } = req.params;
     const { requestingUserId } = req.body;
 
+    // Validate id is provided
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        error: 'ValidationError',
+        message: 'Livestream ID is required',
+        statusCode: 400,
+      });
+      return;
+    }
+
     // Validate requestingUserId is provided
     if (!requestingUserId || typeof requestingUserId !== 'string') {
       res.status(400).json({
@@ -106,7 +126,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
       return;
     }
 
-    const livestream = await livestreamService.deleteLivestream(id, requestingUserId as string);
+    const livestream = await livestreamService.deleteLivestream(id, requestingUserId);
 
     res.status(200).json({
       success: true,

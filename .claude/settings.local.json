@@ -5,7 +5,9 @@
       "Bash(npm install)",
       "Bash(npx prisma init)",
       "Bash(npx prisma generate:*)",
-      "Bash(npx prisma migrate:*)"
+      "Bash(npx prisma migrate:*)",
+      "Bash(xargs:*)",
+      "Bash(docker-compose:*)"
     ],
     "deny": [],
     "ask": []

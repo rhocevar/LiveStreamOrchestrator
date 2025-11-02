@@ -1,0 +1,49 @@
+# Node modules
+node_modules
+npm-debug.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build output
+dist
+build
+*.tsbuildinfo
+
+# Development files
+.git
+.gitignore
+.vscode
+.idea
+
+# Documentation
+*.md
+!README.md
+
+# Testing
+coverage
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+__mocks__
+
+# Logs
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Vite
+.vite
+vite.config.ts.timestamp-*
