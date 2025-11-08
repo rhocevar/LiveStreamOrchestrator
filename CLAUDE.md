@@ -504,7 +504,7 @@ Response: 200 OK
   - `participant_joined`: Logs participant connection (record already created during join) + updates stream state (no SSE broadcast)
   - `participant_left`: Automatically marks participant as LEFT in database + updates stream state (no SSE broadcast)
   - `room_started`: Logs room activation + broadcasts SSE event to subscribers
-  - `room_finished`: Marks all active participants as LEFT + broadcasts SSE event + closes SSE connections
+  - `room_finished`: Marks all active participants as LEFT + updates database livestream status to ENDED + broadcasts SSE event + closes SSE connections
 - **State Updates**: Webhooks automatically update stream state in Redis and trigger SSE broadcasts where applicable
 - **Automatic**: No manual setup required - just configure URL in LiveKit dashboard
 - **Configuration**: Set webhook URL in LiveKit dashboard to: `https://yourapp.com/api/v1/webhooks/livekit`
@@ -1080,7 +1080,7 @@ Webhook events trigger state updates:
 - **participant_joined**: Update state (participants, viewerCount, totalViewers, peak)
 - **participant_left**: Update state (participants, viewerCount)
 - **room_started**: Broadcast SSE event to subscribers
-- **room_finished**: Update state to ENDED + broadcast SSE + close connections
+- **room_finished**: Update database status to ENDED + update state to ENDED + broadcast SSE + close connections
 
 ### State Object Structure
 ```typescript
@@ -1188,7 +1188,7 @@ LiveKit → Webhook Endpoint → Signature Verification → Redis Queue → Work
   - `participant_joined`: Updates participant record with LiveKit SIDs
   - `participant_left`: Marks participant as LEFT using SID (transaction-safe)
   - `room_started`: Logs room activation
-  - `room_finished`: Marks all active participants as LEFT
+  - `room_finished`: Marks all active participants as LEFT + updates livestream status to ENDED in database
 - **Transaction Safety**: Uses `markParticipantAsLeftBySid()` for atomic operations
 
 #### 5. Cleanup Job (`webhook-cleanup.job.ts`)

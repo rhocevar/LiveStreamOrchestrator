@@ -432,7 +432,7 @@ class LivestreamService {
           break;
 
         case 'room_finished':
-          // Room ended - mark all active participants as left
+          // Room ended - mark all active participants as left and update livestream status
           if (event.room) {
             const livestream = await databaseService.getLivestreamByRoomName(
               event.room.name
@@ -462,6 +462,16 @@ class LivestreamService {
 
               console.log(
                 `[Service] Room ${event.room.name} finished, marked ${updatedCount} participants as left`
+              );
+
+              // Update database livestream status to ENDED
+              await databaseService.updateLivestream(livestream.id, {
+                status: 'ENDED',
+                endedAt: new Date(),
+              });
+
+              console.log(
+                `[Service] Livestream ${livestream.id} marked as ENDED in database`
               );
 
               // Handle room ended - updates state and broadcasts SSE event
