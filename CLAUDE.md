@@ -959,7 +959,7 @@ services:
 ```prisma
 model Livestream {
   id               String            @id @default(uuid())
-  roomName         String            @unique
+  roomName         String
   title            String
   description      String?
   status           LivestreamStatus  @default(SCHEDULED)
@@ -1427,6 +1427,9 @@ HTTP Request
 - Database operations use Prisma for type safety
 - API uses `/api/v1/` versioning for future compatibility
 - Room names are sanitized to be LiveKit-compatible (alphanumeric, hyphens, underscores)
+- **Room Names**: Multiple livestreams can have the same room name (identified by unique IDs)
+  - Webhook handlers automatically find the most recent LIVE livestream for a given room name
+  - Each livestream has a unique UUID identifier for precise referencing
 - Livestream status transitions automatically: SCHEDULED → LIVE (or ERROR if creation fails)
 - **Participant Management**: Users join via API, receive JWT tokens, and are tracked in database
   - Only livestream creators can join as HOST role

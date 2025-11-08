@@ -23,11 +23,6 @@ class DatabaseService {
     try {
       return await this.prisma.livestream.create({ data });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new DatabaseError('A livestream with this room name already exists');
-        }
-      }
       throw new DatabaseError('Failed to create livestream record');
     }
   }
@@ -56,11 +51,28 @@ class DatabaseService {
 
   /**
    * Get a livestream by room name
+   * Returns the most recent LIVE livestream with the given room name
+   * If no LIVE livestream is found, returns the most recent one regardless of status
    */
   async getLivestreamByRoomName(roomName: string): Promise<Livestream | null> {
     try {
-      return await this.prisma.livestream.findUnique({
+      // First try to find a LIVE livestream
+      const liveLivestream = await this.prisma.livestream.findFirst({
+        where: {
+          roomName,
+          status: 'LIVE'
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (liveLivestream) {
+        return liveLivestream;
+      }
+
+      // If no LIVE livestream found, return the most recent one
+      return await this.prisma.livestream.findFirst({
         where: { roomName },
+        orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
       throw new DatabaseError('Failed to fetch livestream by room name');

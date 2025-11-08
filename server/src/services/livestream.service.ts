@@ -33,15 +33,6 @@ class LivestreamService {
     // Sanitize room name (LiveKit compatible: alphanumeric, hyphens, underscores)
     const sanitizedRoomName = this.sanitizeRoomName(data.roomName);
 
-    // Check if livestream with this room name already exists
-    const existingLivestream = await databaseService.getLivestreamByRoomName(
-      sanitizedRoomName
-    );
-
-    if (existingLivestream) {
-      throw new ConflictError(`Livestream with room name "${sanitizedRoomName}" already exists`);
-    }
-
     // Create database record with SCHEDULED status
     const livestream = await databaseService.createLivestream({
       roomName: sanitizedRoomName,
