@@ -54,8 +54,9 @@ model Participant {
   joinedAt                DateTime          @default(now())
   leftAt                  DateTime?
 
-  // Unique constraint: One active session per user per livestream
-  @@unique([livestreamId, userId, status])
+  // Note: Partial unique index "participants_unique_active_session" ensures only one
+  // JOINED session per user per livestream (created via raw SQL in migration).
+  // This allows users to rejoin and leave multiple times (multiple LEFT records).
 
   // Composite index for efficient queries
   @@index([livestreamId, status])
