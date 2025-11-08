@@ -45,3 +45,6 @@ server/prisma/migrations/*
 # Docker
 docker-compose.override.yml
 .docker
+
+# Local
+.claude/*
