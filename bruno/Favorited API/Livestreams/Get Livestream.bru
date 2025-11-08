@@ -1,0 +1,32 @@
+meta {
+  name: Get Livestream
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Response has livestream data", function() {
+    expect(res.getBody()).to.have.property('data');
+    expect(res.getBody().data).to.have.property('id');
+    expect(res.getBody().data.id).to.equal(bru.getVar("livestreamId"));
+  });
+}
+
+docs {
+  Make sure to run "Create Livestream" first to set the livestreamId variable.
+}

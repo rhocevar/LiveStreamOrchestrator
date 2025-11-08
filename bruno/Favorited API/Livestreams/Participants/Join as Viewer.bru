@@ -1,0 +1,54 @@
+meta {
+  name: Join as Viewer
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}/join
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "userId": "{{testUserId}}",
+    "displayName": "Viewer User",
+    "role": "VIEWER",
+    "metadata": {
+      "device": "mobile",
+      "platform": "iOS"
+    }
+  }
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Response has token and url", function() {
+    expect(res.getBody().data).to.have.property('token');
+    expect(res.getBody().data).to.have.property('url');
+  });
+
+  test("Participant role is VIEWER", function() {
+    expect(res.getBody().data.participant.role).to.equal('VIEWER');
+  });
+}
+
+script:post-response {
+  if (res.getBody()?.data?.token) {
+    bru.setVar("viewerToken", res.getBody().data.token);
+    bru.setVar("viewerParticipantId", res.getBody().data.participant.id);
+  }
+}
+
+docs {
+  Viewers can only subscribe (watch/listen), they cannot publish audio/video.
+}

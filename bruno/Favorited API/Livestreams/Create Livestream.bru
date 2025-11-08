@@ -1,0 +1,51 @@
+meta {
+  name: Create Livestream
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "roomName": "my-test-livestream",
+    "title": "My Test Livestream",
+    "description": "Testing the API with Bruno",
+    "createdBy": "{{testCreatorId}}",
+    "maxParticipants": 100,
+    "emptyTimeout": 600,
+    "metadata": {
+      "category": "test",
+      "tags": ["demo", "testing"]
+    }
+  }
+}
+
+tests {
+  test("Status code is 201", function() {
+    expect(res.getStatus()).to.equal(201);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Response has data with livestream", function() {
+    expect(res.getBody()).to.have.property('data');
+    expect(res.getBody().data).to.have.property('id');
+    expect(res.getBody().data).to.have.property('roomName');
+    expect(res.getBody().data.status).to.equal('LIVE');
+  });
+}
+
+script:post-response {
+  if (res.getBody()?.data?.id) {
+    bru.setVar("livestreamId", res.getBody().data.id);
+    bru.setVar("roomName", res.getBody().data.roomName);
+  }
+}

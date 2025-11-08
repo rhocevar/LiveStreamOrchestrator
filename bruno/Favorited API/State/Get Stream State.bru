@@ -1,0 +1,38 @@
+meta {
+  name: Get Stream State
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}/state
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Response has stream state data", function() {
+    expect(res.getBody()).to.have.property('data');
+    expect(res.getBody().data).to.have.property('streamId');
+    expect(res.getBody().data).to.have.property('status');
+    expect(res.getBody().data).to.have.property('participants');
+    expect(res.getBody().data).to.have.property('viewerCount');
+    expect(res.getBody().data).to.have.property('totalViewers');
+    expect(res.getBody().data).to.have.property('peakViewerCount');
+  });
+}
+
+docs {
+  Returns real-time ephemeral state stored in Redis.
+  State is stored with 24-hour TTL.
+  Public endpoint (no authentication required).
+}

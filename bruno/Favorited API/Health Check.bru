@@ -1,0 +1,50 @@
+meta {
+  name: Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("All components are healthy", function() {
+    const components = res.getBody().components;
+    expect(components.api.status).to.equal('healthy');
+    expect(components.database.status).to.equal('healthy');
+    expect(components.redis.status).to.equal('healthy');
+    expect(components.queue.status).to.equal('healthy');
+    expect(components.state.status).to.equal('healthy');
+  });
+}
+
+docs {
+  Health check endpoint monitors all system components:
+  - API server status
+  - PostgreSQL database connection
+  - Redis connection
+  - BullMQ webhook queue status
+  - Stream state service status
+
+  Returns comprehensive health information including:
+  - Component health status
+  - Queue metrics (waiting, active, completed, failed jobs)
+  - State service metrics (active SSE connections, subscribed streams)
+
+  Use this endpoint for:
+  - Monitoring and alerting
+  - Load balancer health checks
+  - Pre-deployment validation
+}

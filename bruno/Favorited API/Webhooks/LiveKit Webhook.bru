@@ -1,0 +1,44 @@
+meta {
+  name: LiveKit Webhook
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/{{apiVersion}}/webhooks/livekit
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "event": "participant_joined",
+    "room": {
+      "sid": "RM_test123",
+      "name": "{{roomName}}"
+    },
+    "participant": {
+      "sid": "PA_test456",
+      "identity": "{{testUserId}}",
+      "name": "Test User"
+    },
+    "createdAt": 1234567890
+  }
+}
+
+docs {
+  This endpoint is called by LiveKit automatically.
+
+  In production, this endpoint verifies webhook signatures from LiveKit.
+  Configure this URL in your LiveKit dashboard:
+  https://yourapp.com/api/v1/webhooks/livekit
+
+  Supported events:
+  - participant_joined: User connects to room
+  - participant_left: User disconnects from room
+  - room_started: Room becomes active
+  - room_finished: Room ends
+
+  For local testing without signature verification, you can manually send webhooks.
+  In production, webhooks must come from LiveKit with valid signatures.
+}

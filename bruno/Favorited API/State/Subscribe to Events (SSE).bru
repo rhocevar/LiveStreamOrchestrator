@@ -1,0 +1,58 @@
+meta {
+  name: Subscribe to Events (SSE)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}/events
+  body: none
+  auth: none
+}
+
+docs {
+  This is a Server-Sent Events (SSE) endpoint.
+
+  To test SSE in the browser:
+  ```javascript
+  const eventSource = new EventSource('http://localhost:3001/api/v1/livestreams/{{livestreamId}}/events');
+
+  // Initial state (sent immediately)
+  eventSource.addEventListener('state', (e) => {
+    const state = JSON.parse(e.data);
+    console.log('Current state:', state);
+  });
+
+  // Room lifecycle events
+  eventSource.addEventListener('room_started', (e) => {
+    const state = JSON.parse(e.data);
+    console.log('Stream started:', state);
+  });
+
+  eventSource.addEventListener('room_ended', (e) => {
+    const state = JSON.parse(e.data);
+    console.log('Stream ended:', state);
+    eventSource.close();
+  });
+
+  // Viewer count updates
+  eventSource.addEventListener('viewer_count_update', (e) => {
+    const state = JSON.parse(e.data);
+    console.log('Viewers:', state.viewerCount);
+  });
+
+  // Error handling
+  eventSource.onerror = (error) => {
+    console.error('SSE error:', error);
+    eventSource.close();
+  };
+  ```
+
+  Event types:
+  - state: Initial state sent immediately on connection
+  - room_started: Stream goes live
+  - viewer_count_update: Viewer count changed (throttled)
+  - room_ended: Stream finished (connection closes after this)
+
+  Note: Bruno may not fully support SSE streaming. Use browser EventSource API or curl for testing.
+}

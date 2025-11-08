@@ -1,0 +1,55 @@
+meta {
+  name: Join as Host
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}/join
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "userId": "{{testCreatorId}}",
+    "displayName": "Host User",
+    "role": "HOST",
+    "metadata": {
+      "device": "browser",
+      "browser": "Chrome"
+    }
+  }
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Response has token and url", function() {
+    expect(res.getBody().data).to.have.property('token');
+    expect(res.getBody().data).to.have.property('url');
+  });
+
+  test("Participant role is HOST", function() {
+    expect(res.getBody().data.participant.role).to.equal('HOST');
+  });
+}
+
+script:post-response {
+  if (res.getBody()?.data?.token) {
+    bru.setVar("hostToken", res.getBody().data.token);
+    bru.setVar("hostParticipantId", res.getBody().data.participant.id);
+  }
+}
+
+docs {
+  Only the livestream creator can join as HOST.
+  The userId must match the createdBy field of the livestream.
+}

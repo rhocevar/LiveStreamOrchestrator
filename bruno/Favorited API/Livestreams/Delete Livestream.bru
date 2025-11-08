@@ -1,0 +1,38 @@
+meta {
+  name: Delete Livestream
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/api/{{apiVersion}}/livestreams/{{livestreamId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "requestingUserId": "{{testCreatorId}}"
+  }
+}
+
+tests {
+  test("Status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response has success property", function() {
+    expect(res.getBody()).to.have.property('success');
+    expect(res.getBody().success).to.be.true;
+  });
+
+  test("Livestream is marked as ENDED", function() {
+    expect(res.getBody().data.status).to.equal('ENDED');
+    expect(res.getBody().data).to.have.property('endedAt');
+  });
+}
+
+docs {
+  Only the creator can delete their livestream.
+  Make sure the requestingUserId matches the createdBy field.
+}
