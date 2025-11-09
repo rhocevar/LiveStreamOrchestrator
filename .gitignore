@@ -48,3 +48,6 @@ docker-compose.override.yml
 
 # Local
 .claude/*
+
+# Testing output
+server/coverage/*

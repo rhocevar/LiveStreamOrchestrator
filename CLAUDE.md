@@ -53,10 +53,19 @@ favorited/                    # Monorepo root
 │   ├── prisma/
 │   │   ├── schema.prisma     # Database schema
 │   │   └── migrations/       # Database migrations
+│   ├── __tests__/            # Test suite
+│   │   ├── setup.ts                   # Global test setup
+│   │   ├── mocks/                     # Mock implementations
+│   │   ├── fixtures/                  # Test data factories
+│   │   ├── helpers/                   # Test utilities
+│   │   ├── unit/                      # Unit tests
+│   │   └── integration/               # Integration tests
 │   ├── .env                  # Environment variables (DO NOT COMMIT)
 │   ├── .env.example          # Environment template
+│   ├── jest.config.js        # Jest configuration
 │   ├── package.json          # Server dependencies
-│   └── tsconfig.json         # Server TypeScript config
+│   ├── tsconfig.json         # Server TypeScript config
+│   └── TESTING.md            # Testing guide
 │
 ├── client/                   # Frontend React app
 │   ├── src/
@@ -122,6 +131,13 @@ npm start
 npm run prisma:generate      # Generate Prisma client types
 npm run prisma:migrate       # Create and run migrations
 npm run prisma:studio        # Database management GUI
+
+# Testing
+npm test                     # Run all tests
+npm run test:watch           # Run tests in watch mode
+npm run test:coverage        # Generate coverage report
+npm run test:unit            # Run unit tests only
+npm run test:integration     # Run integration tests only
 ```
 
 ### Client Commands (from /client)
@@ -574,6 +590,123 @@ LIVEKIT_URL=ws://localhost:7880
 LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 ```
+
+## Testing
+
+### Overview
+
+The server includes a comprehensive test suite built with Jest, covering unit tests, integration tests, and testing utilities.
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode (re-runs on file changes)
+npm run test:watch
+
+# Generate coverage report
+npm run test:coverage
+
+# Run only unit tests
+npm run test:unit
+
+# Run only integration tests
+npm run test:integration
+
+# Run specific test file
+npm test -- errors.test.ts
+
+# Run tests matching a pattern
+npm test -- --testPathPattern=services
+```
+
+### Test Structure
+
+```
+server/src/__tests__/
+├── setup.ts                    # Global test setup
+├── mocks/                      # Mock implementations
+│   ├── prisma.mock.ts         # Prisma Client mock
+│   ├── livekit.mock.ts        # LiveKit SDK mock
+│   ├── redis.mock.ts          # Redis mock
+│   └── bullmq.mock.ts         # BullMQ mock
+├── fixtures/                   # Test data factories
+│   └── test-data.ts           # Factory functions for test data
+├── helpers/                    # Test utilities
+│   └── test-utils.ts          # Helper functions
+├── unit/                       # Unit tests
+│   ├── services/              # Service layer tests
+│   ├── routes/                # Route handler tests
+│   ├── workers/               # Worker tests
+│   └── utils/                 # Utility tests
+└── integration/                # Integration tests
+    └── workflows/             # End-to-end workflow tests
+```
+
+### Test Coverage
+
+Current test coverage includes:
+
+- **Error Classes**: Custom error types and hierarchy
+- **LiveKit Service**: Service structure, initialization, and token logic
+- **Database Service**: Service structure, error handling, and query logic
+- **Test Utilities**: Mock factories, helper functions, and test data generators
+
+### Writing Tests
+
+Example unit test:
+
+```typescript
+import { createMockLivestream } from '../../fixtures/test-data.js';
+
+describe('LivestreamService', () => {
+  it('should create a livestream', async () => {
+    const mockLivestream = createMockLivestream();
+
+    // Test implementation
+    expect(mockLivestream.status).toBe('LIVE');
+  });
+});
+```
+
+Example route test with supertest:
+
+```typescript
+import request from 'supertest';
+import { app } from '../../../index.js';
+
+describe('POST /api/v1/livestreams', () => {
+  it('should create a new livestream', async () => {
+    const response = await request(app)
+      .post('/api/v1/livestreams')
+      .send({ roomName: 'test', title: 'Test' })
+      .expect(201);
+
+    expect(response.body.success).toBe(true);
+  });
+});
+```
+
+### Coverage Goals
+
+Target coverage metrics:
+- **Statements**: > 80%
+- **Branches**: > 75%
+- **Functions**: > 80%
+- **Lines**: > 80%
+
+### Detailed Documentation
+
+For comprehensive testing documentation, see [server/TESTING.md](server/TESTING.md), which includes:
+
+- Test organization and best practices
+- Mocking strategies
+- Writing unit and integration tests
+- Debugging tests
+- CI/CD integration
+- Troubleshooting common issues
 
 ## Docker Setup
 
