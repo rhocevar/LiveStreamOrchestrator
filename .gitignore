@@ -27,10 +27,6 @@ dist-ssr
 *.sqlite
 *.sqlite3
 
-# Prisma
-server/prisma/migrations/*
-!server/prisma/migrations/.gitkeep
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
