@@ -286,13 +286,18 @@ class StateService {
         ? countDelta / throttle.lastBroadcastCount
         : 1;
 
+    // Significant change detection
+    const isSignificantChange =
+      percentChange >= this.VIEWER_COUNT_THRESHOLD_PERCENT ||
+      countDelta >= this.VIEWER_COUNT_THRESHOLD_ABSOLUTE;
+
     // Broadcast if:
-    // 1. Enough time has passed (5 seconds)
-    // 2. Count changed by >= 10% OR >= 5 viewers
+    // 1. Significant change (>= 10% OR >= 5 viewers) - broadcast immediately
+    // 2. Any change after 5 seconds (for small changes)
     const shouldBroadcast =
-      timeSinceLastBroadcast >= this.VIEWER_COUNT_THROTTLE_MS &&
-      (percentChange >= this.VIEWER_COUNT_THRESHOLD_PERCENT ||
-        countDelta >= this.VIEWER_COUNT_THRESHOLD_ABSOLUTE);
+      isSignificantChange ||
+      (timeSinceLastBroadcast >= this.VIEWER_COUNT_THROTTLE_MS &&
+        countDelta > 0);
 
     if (shouldBroadcast) {
       this.viewerCountThrottles.set(livestreamId, {
