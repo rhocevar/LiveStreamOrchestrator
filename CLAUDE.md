@@ -16,12 +16,19 @@
 - **Message Queue**: BullMQ with Redis (for webhook processing)
 - **State Management**: Redis for ephemeral stream state (24h TTL)
 - **Real-time Updates**: Server-Sent Events (SSE) with Redis Pub/Sub
+- **Security**: express-rate-limit 8.2.1 (API rate limiting)
 - **Dev Tools**: tsx (TypeScript execution)
 
 ### Client (Frontend)
 - **Framework**: React 19.1.1
 - **Build Tool**: Vite 7.1.7
 - **Language**: TypeScript 5.9.3
+- **Styling**: Tailwind CSS 4.1.17 with PostCSS
+- **HTTP Client**: Axios 1.13.2
+- **LiveKit Integration**:
+  - livekit-client 2.15.14 (WebRTC client)
+  - @livekit/components-react 2.9.15 (React components)
+  - @livekit/components-styles 1.1.6 (Component styles)
 - **Linting**: ESLint 9.36.0
 
 ## Project Structure
@@ -70,16 +77,35 @@ favorited/                    # Monorepo root
 ├── client/                   # Frontend React app
 │   ├── src/
 │   │   ├── assets/           # Static assets
-│   │   ├── App.tsx           # Main component
-│   │   ├── App.css           # Application styles
-│   │   ├── main.tsx          # Entry point
-│   │   └── index.css         # Global styles
-│   ├── public/               # Public static files
-│   ├── index.html            # HTML entry point
-│   ├── package.json          # Client dependencies
-│   ├── tsconfig.json         # Client TypeScript config
-│   ├── vite.config.ts        # Vite configuration
-│   └── eslint.config.js      # ESLint configuration
+│   │   ├── components/       # React components
+│   │   │   ├── ui/          # Reusable UI components
+│   │   │   │   ├── Badge.tsx           # Status badge component
+│   │   │   │   ├── Card.tsx            # Card container component
+│   │   │   │   └── Spinner.tsx         # Loading spinner component
+│   │   │   └── livestream/  # Livestream-specific components
+│   │   │       ├── CreateLivestreamForm.tsx     # Livestream creation form
+│   │   │       ├── CreateLivestreamModal.tsx    # Modal wrapper for creation
+│   │   │       ├── LivestreamCard.tsx           # Livestream list item
+│   │   │       ├── LivestreamGrid.tsx           # Grid layout for livestreams
+│   │   │       ├── LivestreamFilters.tsx        # Filter controls
+│   │   │       └── LivestreamRoom.tsx           # LiveKit room component
+│   │   ├── hooks/           # Custom React hooks
+│   │   │   ├── useLivestreams.ts    # Livestream data management hook
+│   │   │   └── useSSE.ts            # Server-Sent Events hook
+│   │   ├── services/        # API service layer
+│   │   │   └── api.service.ts       # Axios-based API client
+│   │   ├── types/           # TypeScript type definitions
+│   │   │   └── api.types.ts         # API response types
+│   │   ├── App.tsx          # Main application component
+│   │   ├── main.tsx         # Application entry point
+│   │   └── index.css        # Global styles (Tailwind directives)
+│   ├── public/              # Public static files
+│   ├── index.html           # HTML entry point
+│   ├── package.json         # Client dependencies
+│   ├── tsconfig.json        # Client TypeScript config
+│   ├── vite.config.ts       # Vite configuration
+│   ├── postcss.config.js    # PostCSS configuration (Tailwind)
+│   └── eslint.config.js     # ESLint configuration
 │
 ├── package.json              # Root monorepo scripts
 ├── CLAUDE.md                 # This file
@@ -1499,6 +1525,19 @@ RECONCILIATION_INTERVAL_MINUTES=10
 - Keep components small and focused on a single responsibility
 - Extract reusable logic into custom hooks
 
+### Client Architecture Pattern
+- **Components**: Organized by purpose
+  - `components/ui/`: Generic, reusable UI components (Badge, Card, Spinner)
+  - `components/livestream/`: Domain-specific components for livestream features
+- **Hooks**: Custom React hooks for shared logic
+  - `useLivestreams`: Manages livestream CRUD operations and state
+  - `useSSE`: Handles Server-Sent Events subscriptions for real-time updates
+- **Services**: API client layer
+  - `api.service.ts`: Axios-based HTTP client for backend communication
+- **Types**: TypeScript definitions matching backend API contracts
+  - `api.types.ts`: Request/response types for type-safe API calls
+- **Styling**: Tailwind CSS utility classes for consistent styling
+
 ### Code Style
 - Follow ESLint rules configured in the project
 - Use meaningful variable and function names
@@ -1557,6 +1596,14 @@ HTTP Request
 - **Participant Tracking**: Database records of all participants with join/leave timestamps
 - **Query Participants**: List active or historical participants with filters
 
+### Client Application (✅ Completed)
+- **Livestream Management UI**: Create, view, and delete livestreams
+- **Real-time Updates**: SSE integration for live viewer counts and stream status
+- **LiveKit Integration**: Full WebRTC video/audio streaming with LiveKit components
+- **Responsive Design**: Tailwind CSS-based responsive UI
+- **Type-Safe API**: Axios client with TypeScript types matching backend contracts
+- **Custom Hooks**: Reusable hooks for livestream management and SSE subscriptions
+
 ## Future Enhancements
 
 ### Planned Features
@@ -1569,11 +1616,13 @@ HTTP Request
 
 ### Infrastructure
 - ✅ Docker containerization (completed)
-- Add testing (Jest, Vitest, React Testing Library)
+- ✅ Testing (server-side Jest testing completed)
+- ✅ Rate limiting (express-rate-limit integrated)
+- Add client-side testing (Vitest, React Testing Library)
 - Add CI/CD pipelines
 - Add monitoring and logging (Winston, Sentry)
 - Add API documentation (Swagger/OpenAPI)
-- Add rate limiting and authentication
+- Add full authentication system
 
 ## Platform
 
