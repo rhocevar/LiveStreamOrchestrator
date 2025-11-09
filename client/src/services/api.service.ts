@@ -11,6 +11,9 @@ import type {
   GetLivestreamsParams,
   LivestreamStatus,
   StreamState,
+  JoinLivestreamRequest,
+  JoinLivestreamResponse,
+  LeaveLivestreamRequest,
 } from '../types/api.types';
 
 /**
@@ -103,6 +106,42 @@ export const apiService = {
       return response.data.data;
     } catch (error) {
       return handleApiError(error);
+    }
+  },
+
+  /**
+   * Join a livestream
+   */
+  async joinLivestream(
+    livestreamId: string,
+    request: JoinLivestreamRequest
+  ): Promise<ApiResponse<JoinLivestreamResponse>> {
+    try {
+      const response = await apiClient.post<ApiResponse<JoinLivestreamResponse>>(
+        `/livestreams/${livestreamId}/join`,
+        request
+      );
+
+      if (!response.data.success) {
+        throw new Error('Failed to join livestream');
+      }
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+
+  /**
+   * Leave a livestream
+   */
+  async leaveLivestream(livestreamId: string, userId: string): Promise<void> {
+    try {
+      const request: LeaveLivestreamRequest = { userId };
+      await apiClient.post(`/livestreams/${livestreamId}/leave`, request);
+    } catch (error) {
+      // Don't throw on leave errors - just log them
+      console.error('Failed to leave livestream:', error);
     }
   },
 

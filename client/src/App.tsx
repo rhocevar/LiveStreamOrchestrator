@@ -3,13 +3,17 @@
  * Main application component with livestream listing
  */
 
-import React from 'react';
+import { useState } from 'react';
 import { useLivestreams } from './hooks/useLivestreams';
 import { LivestreamFilters } from './components/livestream/LivestreamFilters';
 import { LivestreamGrid } from './components/livestream/LivestreamGrid';
+import { LivestreamRoom } from './components/livestream/LivestreamRoom';
 import { LivestreamStatus } from './types/api.types';
+import type { Livestream } from './types/api.types';
 
 function App() {
+  const [selectedLivestream, setSelectedLivestream] = useState<Livestream | null>(null);
+
   const {
     livestreams,
     isLoading,
@@ -23,6 +27,30 @@ function App() {
     initialLimit: 12,
     pollInterval: 30000, // Poll every 30 seconds
   });
+
+  /**
+   * Handle joining a livestream
+   */
+  const handleJoinLivestream = (livestream: Livestream) => {
+    setSelectedLivestream(livestream);
+  };
+
+  /**
+   * Handle leaving a livestream
+   */
+  const handleLeaveLivestream = () => {
+    setSelectedLivestream(null);
+  };
+
+  // Show room view if a livestream is selected
+  if (selectedLivestream) {
+    return (
+      <LivestreamRoom
+        livestream={selectedLivestream}
+        onLeave={handleLeaveLivestream}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -53,6 +81,7 @@ function App() {
           isLoadingMore={isLoadingMore}
           hasMore={hasMore}
           onLoadMore={loadMore}
+          onJoinLivestream={handleJoinLivestream}
           error={error}
         />
       </main>

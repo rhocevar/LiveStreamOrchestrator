@@ -14,6 +14,7 @@ interface LivestreamGridProps {
   isLoadingMore: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
+  onJoinLivestream?: (livestream: Livestream) => void;
   error?: string | null;
 }
 
@@ -23,6 +24,7 @@ export const LivestreamGrid: React.FC<LivestreamGridProps> = ({
   isLoadingMore,
   hasMore,
   onLoadMore,
+  onJoinLivestream,
   error,
 }) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -110,7 +112,11 @@ export const LivestreamGrid: React.FC<LivestreamGridProps> = ({
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {livestreams.map((livestream) => (
-          <LivestreamCard key={livestream.id} livestream={livestream} />
+          <LivestreamCard
+            key={livestream.id}
+            livestream={livestream}
+            onJoin={onJoinLivestream}
+          />
         ))}
       </div>
 

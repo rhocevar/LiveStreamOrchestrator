@@ -12,6 +12,7 @@ import { useSSE } from '../../hooks/useSSE';
 
 interface LivestreamCardProps {
   livestream: Livestream;
+  onJoin?: (livestream: Livestream) => void;
 }
 
 /**
@@ -40,7 +41,7 @@ const truncateText = (text: string | null, maxLength: number = 100): string => {
   return text.substring(0, maxLength) + '...';
 };
 
-export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) => {
+export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream, onJoin }) => {
   const [viewerCount, setViewerCount] = useState<number | null>(null);
 
   // Only connect to SSE for LIVE streams
@@ -59,9 +60,12 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) =>
   }, [streamState]);
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col group cursor-pointer hover:shadow-lg transition-shadow">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+      <div
+        className="p-4 border-b border-gray-200 dark:border-gray-700"
+        onClick={() => isLive && onJoin?.(livestream)}
+      >
         <div className="flex items-start justify-between gap-2 mb-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white line-clamp-2 flex-1">
             {livestream.title}
@@ -77,7 +81,10 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) =>
       </div>
 
       {/* Body */}
-      <div className="p-4 flex-1">
+      <div
+        className="p-4 flex-1"
+        onClick={() => isLive && onJoin?.(livestream)}
+      >
         <div className="space-y-2">
           {/* Participant Count */}
           <div className="flex items-center justify-between">
@@ -85,13 +92,6 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) =>
             <span className="text-sm font-medium text-gray-900 dark:text-white">
               {isLive && viewerCount !== null ? (
                 <span className="flex items-center gap-1">
-                  <svg
-                    className="w-3.5 h-3.5 text-green-500"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-                  </svg>
                   {viewerCount}
                 </span>
               ) : (
@@ -127,6 +127,19 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) =>
               {livestream.roomName}
             </span>
           </div>
+
+          {/* Join Button (only show for LIVE streams) */}
+          {isLive && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onJoin?.(livestream);
+              }}
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"
+            >
+              Join Stream
+            </button>
+          )}
         </div>
       </div>
     </Card>
