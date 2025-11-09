@@ -1529,11 +1529,13 @@ RECONCILIATION_INTERVAL_MINUTES=10
 - **Components**: Organized by purpose
   - `components/ui/`: Generic, reusable UI components (Badge, Card, Spinner)
   - `components/livestream/`: Domain-specific components for livestream features
+    - `LivestreamCard`: Displays livestream info with real-time participant list (fetches participants via API)
 - **Hooks**: Custom React hooks for shared logic
   - `useLivestreams`: Manages livestream CRUD operations and state
   - `useSSE`: Handles Server-Sent Events subscriptions for real-time updates
 - **Services**: API client layer
   - `api.service.ts`: Axios-based HTTP client for backend communication
+    - `getParticipants()`: Fetches active participants for a livestream
 - **Types**: TypeScript definitions matching backend API contracts
   - `api.types.ts`: Request/response types for type-safe API calls
 - **Styling**: Tailwind CSS utility classes for consistent styling
@@ -1599,6 +1601,10 @@ HTTP Request
 ### Client Application (✅ Completed)
 - **Livestream Management UI**: Create, view, and delete livestreams
 - **Real-time Updates**: SSE integration for live viewer counts and stream status
+- **Participant List Display**: LivestreamCards show active participant names with real-time updates
+  - Automatically fetches and displays up to 50 active participants for LIVE streams
+  - Visual indicators: green dots for online status, "(Host)" badge for the host
+  - Scrollable list with automatic refresh when viewer count changes
 - **LiveKit Integration**: Full WebRTC video/audio streaming with LiveKit components
 - **Responsive Design**: Tailwind CSS-based responsive UI
 - **Type-Safe API**: Axios client with TypeScript types matching backend contracts

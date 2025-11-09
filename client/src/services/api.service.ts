@@ -9,11 +9,13 @@ import type {
   Livestream,
   ApiResponse,
   GetLivestreamsParams,
+  GetParticipantsParams,
   StreamState,
   JoinLivestreamRequest,
   JoinLivestreamResponse,
   LeaveLivestreamRequest,
   CreateLivestreamRequest,
+  Participant,
 } from '../types/api.types';
 
 /**
@@ -172,6 +174,39 @@ export const apiService = {
     } catch (error) {
       // Don't throw on leave errors - just log them
       console.error('Failed to leave livestream:', error);
+    }
+  },
+
+  /**
+   * Get participants for a livestream
+   */
+  async getParticipants(
+    livestreamId: string,
+    params?: GetParticipantsParams
+  ): Promise<{ data: Participant[]; count: number }> {
+    try {
+      const response = await apiClient.get<ApiResponse<Participant[]>>(
+        `/livestreams/${livestreamId}/participants`,
+        {
+          params: {
+            status: params?.status,
+            role: params?.role,
+            limit: params?.limit,
+            offset: params?.offset,
+          },
+        }
+      );
+
+      if (!response.data.success) {
+        throw new Error('Failed to fetch participants');
+      }
+
+      return {
+        data: response.data.data,
+        count: response.data.count || response.data.data.length,
+      };
+    } catch (error) {
+      return handleApiError(error);
     }
   },
 

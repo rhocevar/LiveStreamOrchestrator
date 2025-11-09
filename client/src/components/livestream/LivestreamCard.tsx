@@ -6,9 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
-import { LivestreamStatus } from '../../types/api.types';
-import type { Livestream } from '../../types/api.types';
+import { LivestreamStatus, ParticipantStatus } from '../../types/api.types';
+import type { Livestream, Participant } from '../../types/api.types';
 import { useSSE } from '../../hooks/useSSE';
+import { apiService } from '../../services/api.service';
 
 interface LivestreamCardProps {
   livestream: Livestream;
@@ -50,6 +51,8 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
   currentUserId,
 }) => {
   const [viewerCount, setViewerCount] = useState<number | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false);
 
   // Only connect to SSE for LIVE streams
   const isLive = livestream.status === LivestreamStatus.LIVE;
@@ -70,6 +73,34 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
       setViewerCount(streamState.viewerCount);
     }
   }, [streamState]);
+
+  // Fetch participants for LIVE streams
+  useEffect(() => {
+    if (!isLive) {
+      setParticipants([]);
+      return;
+    }
+
+    const fetchParticipants = async () => {
+      try {
+        setIsLoadingParticipants(true);
+        const response = await apiService.getParticipants(livestream.id, {
+          status: ParticipantStatus.JOINED,
+          limit: 50, // Limit to 50 participants for display
+        });
+        setParticipants(response.data);
+      } catch (error) {
+        console.error('Failed to fetch participants:', error);
+        setParticipants([]);
+      } finally {
+        setIsLoadingParticipants(false);
+      }
+    };
+
+    fetchParticipants();
+
+    // Refresh participants when viewer count changes
+  }, [isLive, livestream.id, viewerCount]);
 
   return (
     <Card className="h-full flex flex-col group cursor-pointer hover:shadow-lg transition-shadow">
@@ -111,6 +142,35 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
               )}
             </span>
           </div>
+
+          {/* Participant List */}
+          {isLive && participants.length > 0 && (
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <div className="text-xs text-gray-500 dark:text-gray-500 mb-2">Active Participants:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {isLoadingParticipants ? (
+                  <div className="text-xs text-gray-400 dark:text-gray-500 italic">Loading...</div>
+                ) : (
+                  participants.map((participant) => (
+                    <div
+                      key={participant.id}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></span>
+                      <span className="text-gray-700 dark:text-gray-300 truncate">
+                        {participant.displayName}
+                      </span>
+                      {participant.role === 'HOST' && (
+                        <span className="text-blue-600 dark:text-blue-400 font-medium flex-shrink-0">
+                          (Host)
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Started At */}
           {livestream.startedAt && (
