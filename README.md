@@ -209,9 +209,8 @@ LiveKit → Webhook → Queue → Worker → Database Update → Redis Pub/Sub �
 
 #### Option 1: Docker Setup (Recommended)
 
-**1. Clone the repository:**
+**1. Navigate to the project folder:**
 ```bash
-git clone <repository-url>
 cd favorited
 ```
 
@@ -375,9 +374,10 @@ npm run dev:client  # Client on :5173
    - **URL**: `wss://your-project.livekit.cloud`
    - **API Key**: Found in project settings
    - **API Secret**: Found in project settings
-4. Configure webhook (optional, for production):
+4. Configure webhook:
    - URL: `https://your-domain.com/api/v1/webhooks/livekit`
    - Events: Select all participant and room events
+   - For local testing, you can optionally setup nkgrok to allow webhooks to reach your server
 
 ## Development Commands
 
@@ -714,31 +714,11 @@ docker-compose down -v
   - Mocking strategies
   - Debugging tests
 
-## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
-### Development Guidelines
-
-- Follow TypeScript strict mode
-- Write tests for new features
-- Follow ESLint rules
-- Use meaningful commit messages
-- Keep functions small and focused
-- Document complex logic
-
-## License
-
-[Your License Here]
 
 ## Support
-
 - **Documentation**: See [CLAUDE.md](./CLAUDE.md) for detailed docs
-- **Issues**: Report bugs via GitHub Issues
 - **LiveKit Support**: [LiveKit Documentation](https://docs.livekit.io)
 
 ## Acknowledgments
