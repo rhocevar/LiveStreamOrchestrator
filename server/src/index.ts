@@ -14,6 +14,7 @@ import { queueService } from './services/queue.service.js';
 import { stateService } from './services/state.service.js';
 import { startWebhookWorker, stopWebhookWorker } from './workers/webhook.worker.js';
 import { startCleanupJob, stopCleanupJob } from './jobs/webhook-cleanup.job.js';
+import { startReconciliationJob, stopReconciliationJob } from './jobs/livestream-cleanup.job.js';
 import { AppError } from './utils/errors.js';
 import type { ErrorResponse } from './types/livestream.types.js';
 
@@ -189,6 +190,10 @@ async function startServer() {
     startCleanupJob();
     console.log('✓ Webhook cleanup job started');
 
+    // Start livestream reconciliation job (syncs database with LiveKit state)
+    startReconciliationJob();
+    console.log('✓ Livestream reconciliation job started');
+
     // Start Express server
     app.listen(PORT, () => {
       console.log('===========================================');
@@ -214,9 +219,12 @@ async function shutdown() {
   console.log('\nShutting down gracefully...');
 
   try {
-    // Stop cleanup job first
+    // Stop cleanup jobs first
     stopCleanupJob();
     console.log('✓ Webhook cleanup job stopped');
+
+    stopReconciliationJob();
+    console.log('✓ Livestream reconciliation job stopped');
 
     // Stop webhook worker (wait for in-flight jobs to complete)
     await stopWebhookWorker();

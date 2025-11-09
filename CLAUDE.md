@@ -43,7 +43,8 @@ favorited/                    # Monorepo root
 │   │   ├── workers/          # Background job processors
 │   │   │   └── webhook.worker.ts      # Processes webhooks from queue
 │   │   ├── jobs/             # Scheduled jobs
-│   │   │   └── webhook-cleanup.job.ts # Cleans expired webhook records
+│   │   │   ├── webhook-cleanup.job.ts      # Cleans expired webhook records
+│   │   │   └── livestream-cleanup.job.ts   # Reconciles livestream state with LiveKit
 │   │   ├── types/            # TypeScript type definitions
 │   │   │   └── livestream.types.ts
 │   │   ├── utils/            # Utility functions
@@ -595,6 +596,7 @@ LIVEKIT_API_KEY=your-api-key
 LIVEKIT_API_SECRET=your-api-secret
 TOKEN_EXPIRATION_HOURS=24
 WEBHOOK_QUEUE_CONCURRENCY=10
+RECONCILIATION_INTERVAL_MINUTES=10
 ```
 
 #### 2. Run in Production Mode
@@ -850,6 +852,7 @@ docker-compose exec -T postgres psql -U favorited favorited < backup.sql
 **Optional** (with defaults):
 - `TOKEN_EXPIRATION_HOURS=24`: JWT token lifetime
 - `WEBHOOK_QUEUE_CONCURRENCY=10`: Worker concurrency
+- `RECONCILIATION_INTERVAL_MINUTES=10`: Livestream reconciliation job interval
 
 **Auto-configured** (by docker-compose):
 - `DATABASE_URL`: PostgreSQL connection
@@ -1192,10 +1195,32 @@ LiveKit → Webhook Endpoint → Signature Verification → Redis Queue → Work
   - `room_finished`: Marks all active participants as LEFT + updates livestream status to ENDED in database
 - **Transaction Safety**: Uses `markParticipantAsLeftBySid()` for atomic operations
 
-#### 5. Cleanup Job (`webhook-cleanup.job.ts`)
+#### 5. Cleanup Jobs
+
+##### Webhook Cleanup Job (`webhook-cleanup.job.ts`)
 - **Purpose**: Prevent unbounded database growth
 - **Frequency**: Runs every hour
 - **Action**: Deletes webhook records older than 24 hours
+
+##### Livestream Reconciliation Job (`livestream-cleanup.job.ts`)
+- **Purpose**: Reconcile database livestream state with LiveKit room state (safety net for missed webhooks)
+- **Frequency**: Runs every 10 minutes (configurable via `RECONCILIATION_INTERVAL_MINUTES`)
+- **Action**: Detects and cleans up stale LIVE livestreams
+- **Reconciliation Logic**:
+  1. Query all LIVE livestreams from database
+  2. Fetch all active rooms from LiveKit
+  3. Identify stale livestreams (marked LIVE but room doesn't exist)
+  4. For each stale livestream:
+     - Mark all active participants as LEFT
+     - Update livestream status to ENDED
+     - Update stream state in Redis
+     - Broadcast `room_ended` SSE event
+     - Close SSE connections
+- **Edge Cases Handled**:
+  - Missed `room_finished` webhooks (server downtime, network issues)
+  - Rooms manually deleted from LiveKit dashboard
+  - Webhook delivery failures
+  - Race conditions during room cleanup
 
 ### Race Condition Prevention
 
@@ -1290,13 +1315,16 @@ Returns comprehensive system status:
 
 ### Environment Configuration
 
-#### New Redis Variables
+#### Redis and Background Job Variables
 ```bash
 # Redis connection URL (required)
 REDIS_URL=redis://localhost:6379
 
 # Webhook queue worker concurrency (default: 10)
 WEBHOOK_QUEUE_CONCURRENCY=10
+
+# Livestream reconciliation job interval in minutes (default: 10)
+RECONCILIATION_INTERVAL_MINUTES=10
 ```
 
 #### Local Development Setup
