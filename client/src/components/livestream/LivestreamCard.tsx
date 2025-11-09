@@ -49,9 +49,6 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream }) =>
   const { state: streamState } = useSSE({
     livestreamId: livestream.id,
     enabled: isLive,
-    onStateUpdate: (state: StreamState) => {
-      setViewerCount(state.viewerCount);
-    },
   });
 
   // Update viewer count when stream state changes

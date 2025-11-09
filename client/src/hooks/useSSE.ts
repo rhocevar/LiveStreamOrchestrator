@@ -124,20 +124,36 @@ export const useSSE = (options: UseSSEOptions): UseSSEReturn => {
 
       // Handle errors
       eventSource.onerror = (e: Event) => {
-        console.error('SSE connection error:', e);
-        setIsConnected(false);
-        setError('Connection error');
-        onErrorRef.current?.(e);
+        const readyState = eventSource.readyState;
+
+        // EventSource.CLOSED (2) means connection permanently failed (e.g., 404, stream ended)
+        // EventSource.CONNECTING (0) means temporary network issue
+        // EventSource.OPEN (1) shouldn't happen in onerror
+
+        if (readyState === EventSource.CLOSED) {
+          // Permanent failure - don't retry (stream likely deleted or ended)
+          console.log('SSE connection closed permanently (stream may have ended)');
+          setIsConnected(false);
+          setError(null); // Don't show error for graceful closures
+          shouldReconnectRef.current = false;
+          onErrorRef.current?.(e);
+        } else {
+          // Temporary connection issue - retry
+          console.error('SSE connection error (temporary):', e);
+          setIsConnected(false);
+          setError('Connection error');
+          onErrorRef.current?.(e);
+
+          // Attempt to reconnect after 5 seconds (if not ended)
+          if (shouldReconnectRef.current && enabled) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              connect();
+            }, 5000);
+          }
+        }
 
         // Close the connection
         eventSource.close();
-
-        // Attempt to reconnect after 5 seconds (if not ended)
-        if (shouldReconnectRef.current && enabled) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, 5000);
-        }
       };
     } catch (err) {
       console.error('Failed to create SSE connection:', err);
