@@ -54,8 +54,10 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
   // Only connect to SSE for LIVE streams
   const isLive = livestream.status === LivestreamStatus.LIVE;
 
-  // Check if current user is the creator
-  const canDelete = currentUserId && livestream.createdBy === currentUserId;
+  // Check if current user is the creator and livestream hasn't ended
+  const canDelete = currentUserId &&
+                    livestream.createdBy === currentUserId &&
+                    livestream.status !== LivestreamStatus.ENDED;
 
   const { state: streamState } = useSSE({
     livestreamId: livestream.id,
