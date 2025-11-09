@@ -27,10 +27,15 @@ const PORT = process.env.PORT || 3001;
 // Middleware Configuration
 // ===========================================
 
+// Trust proxy - Required when running behind nginx/reverse proxy
+// Trust only the first proxy (nginx) for security
+// This enables Express to correctly read X-Forwarded-* headers
+app.set('trust proxy', 1);
+
 // CORS - Allow cross-origin requests with proper security
 const allowedOrigins = process.env.CLIENT_URL
   ? process.env.CLIENT_URL.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:3000'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost'];
 
 app.use(cors({
   origin: (origin, callback) => {

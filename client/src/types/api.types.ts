@@ -4,22 +4,28 @@
  */
 
 // Enums
-export enum LivestreamStatus {
-  SCHEDULED = 'SCHEDULED',
-  LIVE = 'LIVE',
-  ENDED = 'ENDED',
-  ERROR = 'ERROR',
-}
+export const LivestreamStatus = {
+  SCHEDULED: 'SCHEDULED',
+  LIVE: 'LIVE',
+  ENDED: 'ENDED',
+  ERROR: 'ERROR',
+} as const;
 
-export enum ParticipantRole {
-  HOST = 'HOST',
-  VIEWER = 'VIEWER',
-}
+export type LivestreamStatus = (typeof LivestreamStatus)[keyof typeof LivestreamStatus];
 
-export enum ParticipantStatus {
-  JOINED = 'JOINED',
-  LEFT = 'LEFT',
-}
+export const ParticipantRole = {
+  HOST: 'HOST',
+  VIEWER: 'VIEWER',
+} as const;
+
+export type ParticipantRole = (typeof ParticipantRole)[keyof typeof ParticipantRole];
+
+export const ParticipantStatus = {
+  JOINED: 'JOINED',
+  LEFT: 'LEFT',
+} as const;
+
+export type ParticipantStatus = (typeof ParticipantStatus)[keyof typeof ParticipantStatus];
 
 // Livestream types
 export interface Livestream {

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { LivestreamStatus } from '../../types/api.types';
-import type { Livestream, StreamState } from '../../types/api.types';
+import type { Livestream } from '../../types/api.types';
 import { useSSE } from '../../hooks/useSSE';
 
 interface LivestreamCardProps {

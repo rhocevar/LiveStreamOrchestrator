@@ -9,7 +9,6 @@ import type {
   Livestream,
   ApiResponse,
   GetLivestreamsParams,
-  LivestreamStatus,
   StreamState,
   JoinLivestreamRequest,
   JoinLivestreamResponse,

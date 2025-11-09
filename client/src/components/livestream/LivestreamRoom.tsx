@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { LiveKitRoom } from '@livekit/components-react';
 import '@livekit/components-styles';
 import type { Livestream } from '../../types/api.types';
+import { ParticipantRole } from '../../types/api.types';
 import { apiService } from '../../services/api.service';
 import { Spinner } from '../ui/Spinner';
 
@@ -53,13 +54,15 @@ export const LivestreamRoom: React.FC<LivestreamRoomProps> = ({
       const response = await apiService.joinLivestream(livestream.id, {
         userId,
         displayName: displayName || 'Anonymous',
-        role: 'VIEWER',
+        role: ParticipantRole.VIEWER,
       });
 
-      setJoinData({
-        token: response.data.token,
-        url: response.data.url,
-      });
+      if (response.success) {
+        setJoinData({
+          token: response.data.token,
+          url: response.data.url,
+        });
+      }
     } catch (err) {
       console.error('Failed to join livestream:', err);
       setError(err instanceof Error ? err.message : 'Failed to join livestream');
