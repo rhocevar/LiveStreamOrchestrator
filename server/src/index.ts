@@ -6,6 +6,7 @@
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import livestreamRoutes from './routes/livestream.routes.js';
 import stateRoutes from './routes/state.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
@@ -26,8 +27,83 @@ const PORT = process.env.PORT || 3001;
 // Middleware Configuration
 // ===========================================
 
-// CORS - Allow cross-origin requests
-app.use(cors());
+// CORS - Allow cross-origin requests with proper security
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map(origin => origin.trim())
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // In development, be more lenient
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[CORS] Warning: allowing origin ${origin} in development mode`);
+      return callback(null, true);
+    }
+
+    // Reject in production
+    console.error(`[CORS] Blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400, // 24 hours
+}));
+
+// Rate Limiting - Prevent DoS attacks and API abuse
+// General API rate limit (100 requests per 15 minutes per IP)
+const generalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: {
+    success: false,
+    error: 'TooManyRequests',
+    message: 'Too many requests from this IP, please try again later',
+  },
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  // Skip rate limiting for health checks and webhooks
+  skip: (req) => req.path === '/health' || req.path.startsWith('/api/v1/webhooks'),
+});
+
+// Stricter rate limit for write operations (20 requests per hour per IP)
+const writeOperationsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  message: {
+    success: false,
+    error: 'TooManyRequests',
+    message: 'Too many write operations from this IP, please try again later',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Very strict rate limit for creating livestreams (5 per hour per IP)
+const createLivestreamLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  message: {
+    success: false,
+    error: 'TooManyRequests',
+    message: 'Too many livestream creation requests, please try again later',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply general rate limiter to all API routes
+app.use('/api/v1/', generalApiLimiter);
 
 // Body parsing middleware
 // IMPORTANT: Raw body parser for webhooks must come BEFORE JSON/urlencoded parsers
@@ -122,6 +198,13 @@ app.get('/health', async (_req: Request, res: Response) => {
 });
 
 // API v1 routes
+// Apply stricter rate limits to specific write operations
+app.post('/api/v1/livestreams', createLivestreamLimiter); // Create livestream
+app.delete('/api/v1/livestreams/:id', writeOperationsLimiter); // Delete livestream
+app.post('/api/v1/livestreams/:id/join', writeOperationsLimiter); // Join livestream
+app.post('/api/v1/livestreams/:id/leave', writeOperationsLimiter); // Leave livestream
+
+// Mount routes
 app.use('/api/v1/livestreams', livestreamRoutes);
 app.use('/api/v1/livestreams', stateRoutes); // State routes for /livestreams/:id/state and /livestreams/:id/events
 app.use('/api/v1/webhooks', webhookRoutes);

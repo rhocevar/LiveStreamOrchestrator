@@ -21,6 +21,8 @@ interface SSEConnection {
   res: Response;
   livestreamId: string;
   connectedAt: Date;
+  lastActivity: number; // Timestamp of last activity (for idle detection)
+  heartbeatInterval?: NodeJS.Timeout; // Interval for heartbeat pings
 }
 
 interface ViewerCountThrottle {
@@ -41,6 +43,8 @@ class StateService {
   private readonly VIEWER_COUNT_THROTTLE_MS = 5000; // 5 seconds
   private readonly VIEWER_COUNT_THRESHOLD_PERCENT = 0.1; // 10%
   private readonly VIEWER_COUNT_THRESHOLD_ABSOLUTE = 5; // 5 viewers
+  private readonly SSE_IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  private readonly SSE_HEARTBEAT_INTERVAL_MS = 30 * 1000; // 30 seconds
 
   constructor() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -359,6 +363,7 @@ class StateService {
       res,
       livestreamId,
       connectedAt: new Date(),
+      lastActivity: Date.now(),
     };
 
     if (!this.sseConnections.has(livestreamId)) {
@@ -380,7 +385,37 @@ class StateService {
     const currentState = await this.getState(livestreamId);
     if (currentState) {
       this.sendSSEEvent(res, 'state', currentState);
+      connection.lastActivity = Date.now();
     }
+
+    // Set up heartbeat interval for this connection
+    // Sends periodic pings and checks for idle connections
+    connection.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      const idleTime = now - connection.lastActivity;
+
+      // Close connection if idle for too long (zombie connection)
+      if (idleTime > this.SSE_IDLE_TIMEOUT_MS) {
+        console.log(
+          `[State Service] Closing idle SSE connection for ${livestreamId} (idle: ${Math.round(idleTime / 1000)}s)`
+        );
+        this.closeConnection(connection);
+        return;
+      }
+
+      // Send heartbeat to keep connection alive
+      try {
+        res.write(': heartbeat\n\n');
+        connection.lastActivity = now;
+      } catch (error) {
+        // Connection already closed, clean up
+        console.error(
+          `[State Service] Error sending heartbeat to ${livestreamId}:`,
+          error
+        );
+        this.closeConnection(connection);
+      }
+    }, this.SSE_HEARTBEAT_INTERVAL_MS);
 
     // Handle client disconnect
     res.on('close', () => {
@@ -437,9 +472,40 @@ class StateService {
     try {
       res.write(`event: ${event}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+      // Update lastActivity for the connection
+      // Find the connection that matches this response object
+      for (const [, connections] of this.sseConnections) {
+        const connection = connections.find(c => c.res === res);
+        if (connection) {
+          connection.lastActivity = Date.now();
+          break;
+        }
+      }
     } catch (error) {
       console.error('[State Service] Error sending SSE event:', error);
     }
+  }
+
+  /**
+   * Close a single SSE connection
+   */
+  private closeConnection(connection: SSEConnection): void {
+    try {
+      // Clear heartbeat interval
+      if (connection.heartbeatInterval) {
+        clearInterval(connection.heartbeatInterval);
+        connection.heartbeatInterval = undefined;
+      }
+
+      // Close the response stream
+      connection.res.end();
+    } catch (error) {
+      console.error('[State Service] Error closing connection:', error);
+    }
+
+    // Remove from connections map
+    this.removeSSEConnection(connection.livestreamId, connection);
   }
 
   /**
@@ -456,6 +522,12 @@ class StateService {
 
     const index = connections.indexOf(connection);
     if (index > -1) {
+      // Clear heartbeat interval if it exists
+      if (connection.heartbeatInterval) {
+        clearInterval(connection.heartbeatInterval);
+        connection.heartbeatInterval = undefined;
+      }
+
       connections.splice(index, 1);
       console.log(
         `[State Service] SSE connection closed for ${livestreamId} (remaining: ${connections.length})`
@@ -480,6 +552,13 @@ class StateService {
 
     connections.forEach((connection) => {
       try {
+        // Clear heartbeat interval
+        if (connection.heartbeatInterval) {
+          clearInterval(connection.heartbeatInterval);
+          connection.heartbeatInterval = undefined;
+        }
+
+        // Close response stream
         connection.res.end();
       } catch (error) {
         console.error('[State Service] Error closing SSE connection:', error);
