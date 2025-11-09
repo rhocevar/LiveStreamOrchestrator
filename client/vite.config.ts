@@ -8,5 +8,12 @@ export default defineConfig({
     host: true, // Bind to 0.0.0.0 to allow Docker container access
     port: 5173,
     strictPort: true,
+    proxy: {
+      '/api': {
+        // Use environment variable for Docker, fallback to localhost for local dev
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 })

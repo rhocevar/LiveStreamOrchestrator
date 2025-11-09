@@ -135,6 +135,7 @@ services:
     container_name: favorited-client-dev
     environment:
       VITE_API_URL: http://localhost:3001/api/v1
+      VITE_API_PROXY_TARGET: http://server-dev:3001
     ports:
       - "5173:5173"
     depends_on:
