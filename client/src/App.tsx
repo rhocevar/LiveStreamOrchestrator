@@ -8,11 +8,18 @@ import { useLivestreams } from './hooks/useLivestreams';
 import { LivestreamFilters } from './components/livestream/LivestreamFilters';
 import { LivestreamGrid } from './components/livestream/LivestreamGrid';
 import { LivestreamRoom } from './components/livestream/LivestreamRoom';
+import {
+  CreateLivestreamModal,
+  type CreateLivestreamFormData,
+} from './components/livestream/CreateLivestreamModal';
 import { LivestreamStatus } from './types/api.types';
 import type { Livestream } from './types/api.types';
+import { apiService } from './services/api.service';
 
 function App() {
   const [selectedLivestream, setSelectedLivestream] = useState<Livestream | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [currentUserId] = useState(() => `user-${Math.random().toString(36).substr(2, 9)}`);
 
   const {
     livestreams,
@@ -23,6 +30,7 @@ function App() {
     statusFilter,
     loadMore,
     setStatusFilter,
+    refresh,
   } = useLivestreams({
     initialLimit: 12,
     pollInterval: 30000, // Poll every 30 seconds
@@ -42,6 +50,27 @@ function App() {
     setSelectedLivestream(null);
   };
 
+  /**
+   * Handle creating a livestream
+   */
+  const handleCreateLivestream = async (data: CreateLivestreamFormData) => {
+    await apiService.createLivestream(data);
+    await refresh(); // Refresh the list to show the new livestream
+  };
+
+  /**
+   * Handle deleting a livestream
+   */
+  const handleDeleteLivestream = async (livestream: Livestream) => {
+    try {
+      await apiService.deleteLivestream(livestream.id, currentUserId);
+      await refresh(); // Refresh the list
+    } catch (error) {
+      console.error('Failed to delete livestream:', error);
+      alert('Failed to delete livestream: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   // Show room view if a livestream is selected
   if (selectedLivestream) {
     return (
@@ -57,12 +86,38 @@ function App() {
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Livestreams
-          </h1>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Browse and discover livestreams
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Livestreams
+              </h1>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                Browse and discover livestreams
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                Your ID: <span className="font-mono">{currentUserId}</span>
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Create Livestream
+            </button>
+          </div>
         </div>
       </header>
 
@@ -82,6 +137,8 @@ function App() {
           hasMore={hasMore}
           onLoadMore={loadMore}
           onJoinLivestream={handleJoinLivestream}
+          onDeleteLivestream={handleDeleteLivestream}
+          currentUserId={currentUserId}
           error={error}
         />
       </main>
@@ -94,6 +151,14 @@ function App() {
           </p>
         </div>
       </footer>
+
+      {/* Create Livestream Modal */}
+      {showCreateModal && (
+        <CreateLivestreamModal
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateLivestream}
+        />
+      )}
     </div>
   );
 }

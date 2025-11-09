@@ -13,6 +13,8 @@ import { useSSE } from '../../hooks/useSSE';
 interface LivestreamCardProps {
   livestream: Livestream;
   onJoin?: (livestream: Livestream) => void;
+  onDelete?: (livestream: Livestream) => void;
+  currentUserId?: string; // For checking if user can delete
 }
 
 /**
@@ -41,11 +43,19 @@ const truncateText = (text: string | null, maxLength: number = 100): string => {
   return text.substring(0, maxLength) + '...';
 };
 
-export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream, onJoin }) => {
+export const LivestreamCard: React.FC<LivestreamCardProps> = ({
+  livestream,
+  onJoin,
+  onDelete,
+  currentUserId,
+}) => {
   const [viewerCount, setViewerCount] = useState<number | null>(null);
 
   // Only connect to SSE for LIVE streams
   const isLive = livestream.status === LivestreamStatus.LIVE;
+
+  // Check if current user is the creator
+  const canDelete = currentUserId && livestream.createdBy === currentUserId;
 
   const { state: streamState } = useSSE({
     livestreamId: livestream.id,
@@ -70,7 +80,35 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream, onJo
           <h3 className="text-lg font-bold text-gray-900 dark:text-white line-clamp-2 flex-1">
             {livestream.title}
           </h3>
-          <Badge status={livestream.status} />
+          <div className="flex items-center gap-2">
+            <Badge status={livestream.status} />
+            {canDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm('Are you sure you want to delete this livestream?')) {
+                    onDelete?.(livestream);
+                  }
+                }}
+                className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                title="Delete livestream"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {livestream.description && (
@@ -126,6 +164,24 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({ livestream, onJo
             <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
               {livestream.roomName}
             </span>
+          </div>
+
+          {/* Creator Info */}
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-500 flex-shrink-0">Creator:</span>
+            <div className="flex items-center justify-end gap-1 flex-1 min-w-0">
+              <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate" title={livestream.createdBy}>
+                {livestream.createdBy}
+              </span>
+              {canDelete && (
+                <span
+                  className="text-xs text-green-600 dark:text-green-400 flex-shrink-0"
+                  title="You created this stream"
+                >
+                  (you)
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Join Button (only show for LIVE streams) */}

@@ -15,6 +15,8 @@ interface LivestreamGridProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onJoinLivestream?: (livestream: Livestream) => void;
+  onDeleteLivestream?: (livestream: Livestream) => void;
+  currentUserId?: string;
   error?: string | null;
 }
 
@@ -25,6 +27,8 @@ export const LivestreamGrid: React.FC<LivestreamGridProps> = ({
   hasMore,
   onLoadMore,
   onJoinLivestream,
+  onDeleteLivestream,
+  currentUserId,
   error,
 }) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -116,6 +120,8 @@ export const LivestreamGrid: React.FC<LivestreamGridProps> = ({
             key={livestream.id}
             livestream={livestream}
             onJoin={onJoinLivestream}
+            onDelete={onDeleteLivestream}
+            currentUserId={currentUserId}
           />
         ))}
       </div>

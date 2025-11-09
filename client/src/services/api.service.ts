@@ -14,6 +14,7 @@ import type {
   JoinLivestreamRequest,
   JoinLivestreamResponse,
   LeaveLivestreamRequest,
+  CreateLivestreamRequest,
 } from '../types/api.types';
 
 /**
@@ -49,6 +50,36 @@ const handleApiError = (error: unknown): never => {
  * API Service
  */
 export const apiService = {
+  /**
+   * Create a new livestream
+   */
+  async createLivestream(request: CreateLivestreamRequest): Promise<Livestream> {
+    try {
+      const response = await apiClient.post<ApiResponse<Livestream>>('/livestreams', request);
+
+      if (!response.data.success) {
+        throw new Error('Failed to create livestream');
+      }
+
+      return response.data.data;
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+
+  /**
+   * Delete a livestream
+   */
+  async deleteLivestream(livestreamId: string, requestingUserId: string): Promise<void> {
+    try {
+      await apiClient.delete(`/livestreams/${livestreamId}`, {
+        data: { requestingUserId },
+      });
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+
   /**
    * Get livestreams with optional filters
    */
