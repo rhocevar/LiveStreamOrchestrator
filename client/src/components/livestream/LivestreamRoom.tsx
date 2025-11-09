@@ -31,7 +31,7 @@ export const LivestreamRoom: React.FC<LivestreamRoomProps> = ({
   const [joinData, setJoinData] = useState<JoinData | null>(null);
   const [isJoining, setIsJoining] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userId] = useState(() => `user-${Math.random().toString(36).substr(2, 9)}`);
+  const [userId] = useState(() => `user-${Math.random().toString(36).substring(2, 11)}`);
   const [displayName, setDisplayName] = useState('');
   const [isReady, setIsReady] = useState(false);
 

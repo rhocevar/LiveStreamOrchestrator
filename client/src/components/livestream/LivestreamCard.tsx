@@ -80,35 +80,7 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
           <h3 className="text-lg font-bold text-gray-900 dark:text-white line-clamp-2 flex-1">
             {livestream.title}
           </h3>
-          <div className="flex items-center gap-2">
-            <Badge status={livestream.status} />
-            {canDelete && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.confirm('Are you sure you want to delete this livestream?')) {
-                    onDelete?.(livestream);
-                  }
-                }}
-                className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                title="Delete livestream"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-              </button>
-            )}
-          </div>
+          <Badge status={livestream.status} />
         </div>
 
         {livestream.description && (
@@ -194,6 +166,21 @@ export const LivestreamCard: React.FC<LivestreamCardProps> = ({
               className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"
             >
               Join Stream
+            </button>
+          )}
+
+          {/* Delete Button (only show for creator) */}
+          {canDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm('Are you sure you want to delete this livestream?')) {
+                  onDelete?.(livestream);
+                }
+              }}
+              className="mt-2 w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"
+            >
+              Delete Livestream
             </button>
           )}
         </div>

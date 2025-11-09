@@ -9,9 +9,9 @@ import { LivestreamFilters } from './components/livestream/LivestreamFilters';
 import { LivestreamGrid } from './components/livestream/LivestreamGrid';
 import { LivestreamRoom } from './components/livestream/LivestreamRoom';
 import {
-  CreateLivestreamModal,
+  CreateLivestreamForm,
   type CreateLivestreamFormData,
-} from './components/livestream/CreateLivestreamModal';
+} from './components/livestream/CreateLivestreamForm';
 import { LivestreamStatus } from './types/api.types';
 import type { Livestream } from './types/api.types';
 import { apiService } from './services/api.service';
@@ -19,7 +19,18 @@ import { apiService } from './services/api.service';
 function App() {
   const [selectedLivestream, setSelectedLivestream] = useState<Livestream | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [currentUserId] = useState(() => `user-${Math.random().toString(36).substr(2, 9)}`);
+  const [currentUserId] = useState(() => {
+    // Check localStorage for existing user ID
+    const storedUserId = localStorage.getItem('favorited_user_id');
+    if (storedUserId) {
+      return storedUserId;
+    }
+
+    // Generate new user ID and store it
+    const newUserId = `user-${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem('favorited_user_id', newUserId);
+    return newUserId;
+  });
 
   const {
     livestreams,
@@ -123,6 +134,31 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Create Form - Inline */}
+        {showCreateModal && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Create Livestream
+              </h2>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                title="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <CreateLivestreamForm
+              onClose={() => setShowCreateModal(false)}
+              onSubmit={handleCreateLivestream}
+              currentUserId={currentUserId}
+            />
+          </div>
+        )}
+
         {/* Filters */}
         <LivestreamFilters
           activeFilter={statusFilter}
@@ -151,14 +187,6 @@ function App() {
           </p>
         </div>
       </footer>
-
-      {/* Create Livestream Modal */}
-      {showCreateModal && (
-        <CreateLivestreamModal
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateLivestream}
-        />
-      )}
     </div>
   );
 }
