@@ -230,7 +230,7 @@ LIVEKIT_API_SECRET=your-api-secret
 **3. Run with Docker Compose:**
 ```bash
 # Production mode (nginx + optimized builds)
-docker-compose --profile prod up -d
+docker-compose --profile prod up
 
 # Development mode (hot reload, debugging)
 docker-compose --profile dev up
