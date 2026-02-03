@@ -1,4 +1,4 @@
-# Live Streaming App
+# Live Streaming Orchestrator
 
 A full-stack TypeScript application for managing and streaming live video events with LiveKit. Built with modern web technologies, featuring real-time updates, scalable architecture, and production-grade reliability.
 
